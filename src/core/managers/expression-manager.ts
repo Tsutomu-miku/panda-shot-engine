@@ -1,147 +1,238 @@
 /**
- * Expression Manager — Manage expressions for characters
+ * Expression Manager — CRUD for image-based ExpressionSet on characters
+ * 
+ * Expressions are facial sticker images that overlay on the character's face.
+ * Each expression set contains images for eyes, mouth, eyebrows, and overlays.
  */
 
-import { DemoCharacter } from '../../demo/demo-project';
+import { CharacterAsset, ExpressionSet } from '../project/types';
 
-const AVAILABLE_EXPRESSIONS = [
-  'neutral', 'happy', 'angry', 'shocked', 'smirk', 'crying',
-  'confused', 'determined', 'scared', 'disgusted', 'sleepy',
-  'excited', 'embarrassed', 'proud', 'sad', 'thinking',
-] as const;
+export interface ExpressionCreateInput {
+  name: string;
+  eyesImage?: string;
+  mouthImage?: string;
+  eyebrowImage?: string;
+  overlayImage?: string;
+  thumbnail?: string;
+}
 
-export type ExpressionName = typeof AVAILABLE_EXPRESSIONS[number] | string;
+export interface ExpressionUpdateInput {
+  name?: string;
+  eyesImage?: string | null;  // null = remove
+  mouthImage?: string | null;
+  eyebrowImage?: string | null;
+  overlayImage?: string | null;
+  thumbnail?: string | null;
+}
+
+function generateExpressionId(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '') + '_' + Date.now().toString(36);
+}
 
 export class ExpressionManager {
-  /**
-   * Get all available expression presets.
-   */
-  static getAvailableExpressions(): readonly string[] {
-    return AVAILABLE_EXPRESSIONS;
-  }
-
-  /**
-   * Add an expression to a character.
-   */
+  /** Add a new expression set to a character */
   static addExpression(
-    characters: DemoCharacter[],
-    characterId: string,
-    expression: string,
-  ): DemoCharacter[] {
-    const idx = characters.findIndex((c) => c.id === characterId);
-    if (idx === -1) throw new Error(`Character "${characterId}" not found`);
+    characters: CharacterAsset[],
+    charId: string,
+    input: ExpressionCreateInput,
+  ): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
+
+    if (!input.name || input.name.trim().length === 0) {
+      throw new Error('Expression name is required');
+    }
 
     const char = characters[idx];
-    if (char.expressions.includes(expression)) {
-      throw new Error(`Expression "${expression}" already exists on "${char.name}"`);
+    const exprId = generateExpressionId(input.name);
+    
+    // Check for duplicate names
+    const existing = Object.values(char.expressions);
+    if (existing.some((e) => e.name === input.name.trim())) {
+      throw new Error(`Expression "${input.name}" already exists on this character`);
     }
+
+    const newExpr: ExpressionSet = {
+      id: exprId,
+      name: input.name.trim(),
+      eyesImage: input.eyesImage,
+      mouthImage: input.mouthImage,
+      eyebrowImage: input.eyebrowImage,
+      overlayImage: input.overlayImage,
+      thumbnail: input.thumbnail,
+    };
 
     const updated = [...characters];
     updated[idx] = {
       ...char,
-      expressions: [...char.expressions, expression],
+      expressions: { ...char.expressions, [exprId]: newExpr },
     };
     return updated;
   }
 
-  /**
-   * Remove an expression from a character.
-   */
-  static removeExpression(
-    characters: DemoCharacter[],
-    characterId: string,
-    expression: string,
-  ): DemoCharacter[] {
-    const idx = characters.findIndex((c) => c.id === characterId);
-    if (idx === -1) throw new Error(`Character "${characterId}" not found`);
+  /** Update an existing expression's sticker images */
+  static updateExpression(
+    characters: CharacterAsset[],
+    charId: string,
+    exprId: string,
+    input: ExpressionUpdateInput,
+  ): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
 
     const char = characters[idx];
-    if (!char.expressions.includes(expression)) {
-      throw new Error(`Expression "${expression}" not found on "${char.name}"`);
-    }
-    if (char.expressions.length <= 1) {
-      throw new Error('Character must have at least one expression');
-    }
+    const expr = char.expressions[exprId];
+    if (!expr) throw new Error(`Expression "${exprId}" not found on character "${charId}"`);
 
-    const updated = [...characters];
-    updated[idx] = {
-      ...char,
-      expressions: char.expressions.filter((e) => e !== expression),
-    };
-    return updated;
-  }
-
-  /**
-   * Reorder expressions for a character.
-   */
-  static reorderExpressions(
-    characters: DemoCharacter[],
-    characterId: string,
-    fromIndex: number,
-    toIndex: number,
-  ): DemoCharacter[] {
-    const idx = characters.findIndex((c) => c.id === characterId);
-    if (idx === -1) throw new Error(`Character "${characterId}" not found`);
-
-    const char = characters[idx];
-    const exprs = [...char.expressions];
-    const [moved] = exprs.splice(fromIndex, 1);
-    exprs.splice(toIndex, 0, moved);
-
-    const updated = [...characters];
-    updated[idx] = { ...char, expressions: exprs };
-    return updated;
-  }
-
-  /**
-   * Batch set expressions for a character (replaces all).
-   */
-  static setExpressions(
-    characters: DemoCharacter[],
-    characterId: string,
-    expressions: string[],
-  ): DemoCharacter[] {
-    const idx = characters.findIndex((c) => c.id === characterId);
-    if (idx === -1) throw new Error(`Character "${characterId}" not found`);
-    if (expressions.length === 0) {
-      throw new Error('Character must have at least one expression');
-    }
-
-    const uniqueExprs = [...new Set(expressions)];
-    const updated = [...characters];
-    updated[idx] = { ...characters[idx], expressions: uniqueExprs };
-    return updated;
-  }
-
-  /**
-   * Get expression names referenced in DSL text.
-   */
-  static getReferencedExpressions(dslText: string): Set<string> {
-    const exprs = new Set<string>();
-    const regex = /expression\s+(\w+)/g;
-    let m: RegExpExecArray | null;
-    while ((m = regex.exec(dslText)) !== null) exprs.add(m[1]);
-    return exprs;
-  }
-
-  /**
-   * Validate that all expressions referenced in DSL exist on the characters.
-   */
-  static validateDslExpressions(
-    dslText: string,
-    characters: DemoCharacter[],
-  ): string[] {
-    const warnings: string[] = [];
-    const charExprRegex = /(\w+)\s+expression\s+(\w+)/g;
-    let m: RegExpExecArray | null;
-    while ((m = charExprRegex.exec(dslText)) !== null) {
-      const charId = m[1];
-      const expr = m[2];
-      const char = characters.find((c) => c.id === charId);
-      if (char && !char.expressions.includes(expr)) {
-        warnings.push(`Character "${char.name}" does not have expression "${expr}"`);
+    if (input.name !== undefined) {
+      const existing = Object.values(char.expressions);
+      if (existing.some((e) => e.name === input.name!.trim() && e.id !== exprId)) {
+        throw new Error(`Expression name "${input.name}" already exists`);
       }
     }
-    return warnings;
+
+    const updatedExpr: ExpressionSet = {
+      ...expr,
+      ...(input.name !== undefined && { name: input.name.trim() }),
+    };
+
+    // Handle image updates (null means remove)
+    for (const key of ['eyesImage', 'mouthImage', 'eyebrowImage', 'overlayImage', 'thumbnail'] as const) {
+      if (input[key] !== undefined) {
+        if (input[key] === null) {
+          delete (updatedExpr as any)[key];
+        } else {
+          (updatedExpr as any)[key] = input[key];
+        }
+      }
+    }
+
+    const updated = [...characters];
+    updated[idx] = {
+      ...char,
+      expressions: { ...char.expressions, [exprId]: updatedExpr },
+    };
+    return updated;
+  }
+
+  /** Update a single sticker slot on an expression */
+  static updateStickerSlot(
+    characters: CharacterAsset[],
+    charId: string,
+    exprId: string,
+    slot: 'eyesImage' | 'mouthImage' | 'eyebrowImage' | 'overlayImage',
+    imageData: string | null,
+  ): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
+
+    const char = characters[idx];
+    const expr = char.expressions[exprId];
+    if (!expr) throw new Error(`Expression "${exprId}" not found`);
+
+    const updatedExpr = { ...expr };
+    if (imageData === null) {
+      delete (updatedExpr as any)[slot];
+    } else {
+      (updatedExpr as any)[slot] = imageData;
+    }
+
+    const updated = [...characters];
+    updated[idx] = {
+      ...char,
+      expressions: { ...char.expressions, [exprId]: updatedExpr },
+    };
+    return updated;
+  }
+
+  /** Remove an expression from a character */
+  static removeExpression(
+    characters: CharacterAsset[],
+    charId: string,
+    exprId: string,
+  ): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
+
+    const char = characters[idx];
+    if (!char.expressions[exprId]) {
+      throw new Error(`Expression "${exprId}" not found`);
+    }
+
+    const newExprs = { ...char.expressions };
+    delete newExprs[exprId];
+
+    const updated = [...characters];
+    updated[idx] = { ...char, expressions: newExprs };
+    return updated;
+  }
+
+  /** Duplicate an expression within the same character */
+  static duplicateExpression(
+    characters: CharacterAsset[],
+    charId: string,
+    exprId: string,
+  ): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
+
+    const char = characters[idx];
+    const original = char.expressions[exprId];
+    if (!original) throw new Error(`Expression "${exprId}" not found`);
+
+    let copyName = original.name + ' (Copy)';
+    let counter = 2;
+    const existing = Object.values(char.expressions);
+    while (existing.some((e) => e.name === copyName)) {
+      copyName = `${original.name} (Copy ${counter})`;
+      counter++;
+    }
+
+    const newId = generateExpressionId(copyName);
+    const newExpr: ExpressionSet = {
+      ...JSON.parse(JSON.stringify(original)),
+      id: newId,
+      name: copyName,
+    };
+
+    const updated = [...characters];
+    updated[idx] = {
+      ...char,
+      expressions: { ...char.expressions, [newId]: newExpr },
+    };
+    return updated;
+  }
+
+  /** Copy an expression from one character to another */
+  static copyExpressionToCharacter(
+    characters: CharacterAsset[],
+    fromCharId: string,
+    exprId: string,
+    toCharId: string,
+  ): CharacterAsset[] {
+    const fromIdx = characters.findIndex((c) => c.id === fromCharId);
+    const toIdx = characters.findIndex((c) => c.id === toCharId);
+    if (fromIdx === -1) throw new Error(`Source character "${fromCharId}" not found`);
+    if (toIdx === -1) throw new Error(`Target character "${toCharId}" not found`);
+
+    const original = characters[fromIdx].expressions[exprId];
+    if (!original) throw new Error(`Expression "${exprId}" not found`);
+
+    const newId = generateExpressionId(original.name);
+    const newExpr: ExpressionSet = {
+      ...JSON.parse(JSON.stringify(original)),
+      id: newId,
+    };
+
+    const updated = [...characters];
+    updated[toIdx] = {
+      ...updated[toIdx],
+      expressions: { ...updated[toIdx].expressions, [newId]: newExpr },
+    };
+    return updated;
   }
 }

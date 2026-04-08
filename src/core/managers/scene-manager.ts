@@ -1,11 +1,12 @@
 /**
- * Scene Manager — CRUD operations for DemoScene
+ * Scene Manager — CRUD operations for SceneAsset
  */
 
-import { DemoScene } from '../../demo/demo-project';
+import { SceneAsset } from '../project/types';
 
 export interface SceneCreateInput {
   name: string;
+  backgroundImage?: string;
   color?: string;
   gradientStart?: string;
   gradientEnd?: string;
@@ -15,6 +16,7 @@ export interface SceneCreateInput {
 
 export interface SceneUpdateInput {
   name?: string;
+  backgroundImage?: string | null;
   color?: string;
   gradientStart?: string;
   gradientEnd?: string;
@@ -41,9 +43,9 @@ const SCENE_PALETTE: Array<{ color: string; gradientStart: string; gradientEnd: 
 
 export class SceneManager {
   static create(
-    scenes: DemoScene[],
+    scenes: SceneAsset[],
     input: SceneCreateInput,
-  ): { scenes: DemoScene[]; newScene: DemoScene } {
+  ): { scenes: SceneAsset[]; newScene: SceneAsset } {
     if (!input.name || input.name.trim().length === 0) {
       throw new Error('Scene name is required');
     }
@@ -52,9 +54,10 @@ export class SceneManager {
     }
 
     const palette = SCENE_PALETTE[scenes.length % SCENE_PALETTE.length];
-    const newScene: DemoScene = {
+    const newScene: SceneAsset = {
       id: generateSceneId(input.name),
       name: input.name.trim(),
+      backgroundImage: input.backgroundImage,
       color: input.color ?? palette.color,
       gradientStart: input.gradientStart ?? palette.gradientStart,
       gradientEnd: input.gradientEnd ?? palette.gradientEnd,
@@ -66,10 +69,10 @@ export class SceneManager {
   }
 
   static update(
-    scenes: DemoScene[],
+    scenes: SceneAsset[],
     sceneId: string,
     input: SceneUpdateInput,
-  ): DemoScene[] {
+  ): SceneAsset[] {
     const idx = scenes.findIndex((s) => s.id === sceneId);
     if (idx === -1) throw new Error(`Scene "${sceneId}" not found`);
 
@@ -79,40 +82,48 @@ export class SceneManager {
     }
 
     const updated = [...scenes];
-    updated[idx] = {
-      ...updated[idx],
-      ...(input.name !== undefined && { name: input.name.trim() }),
-      ...(input.color !== undefined && { color: input.color }),
-      ...(input.gradientStart !== undefined && { gradientStart: input.gradientStart }),
-      ...(input.gradientEnd !== undefined && { gradientEnd: input.gradientEnd }),
-      ...(input.description !== undefined && { description: input.description }),
-      ...(input.floorY !== undefined && { floorY: Math.max(0, Math.min(1, input.floorY)) }),
-    };
+    const scene = { ...updated[idx] };
+    
+    if (input.name !== undefined) scene.name = input.name.trim();
+    if (input.color !== undefined) scene.color = input.color;
+    if (input.gradientStart !== undefined) scene.gradientStart = input.gradientStart;
+    if (input.gradientEnd !== undefined) scene.gradientEnd = input.gradientEnd;
+    if (input.description !== undefined) scene.description = input.description;
+    if (input.floorY !== undefined) scene.floorY = Math.max(0, Math.min(1, input.floorY));
+    if (input.backgroundImage !== undefined) {
+      if (input.backgroundImage === null) {
+        delete scene.backgroundImage;
+      } else {
+        scene.backgroundImage = input.backgroundImage;
+      }
+    }
+
+    updated[idx] = scene;
     return updated;
   }
 
-  static remove(scenes: DemoScene[], sceneId: string): DemoScene[] {
+  static remove(scenes: SceneAsset[], sceneId: string): SceneAsset[] {
     const idx = scenes.findIndex((s) => s.id === sceneId);
     if (idx === -1) throw new Error(`Scene "${sceneId}" not found`);
     return scenes.filter((s) => s.id !== sceneId);
   }
 
-  static duplicate(scenes: DemoScene[], sceneId: string): {
-    scenes: DemoScene[];
-    newScene: DemoScene;
+  static duplicate(scenes: SceneAsset[], sceneId: string): {
+    scenes: SceneAsset[];
+    newScene: SceneAsset;
   } {
     const original = scenes.find((s) => s.id === sceneId);
     if (!original) throw new Error(`Scene "${sceneId}" not found`);
 
-    let copyName = original.name + ' (副本)';
+    let copyName = original.name + ' (Copy)';
     let counter = 2;
     while (scenes.some((s) => s.name === copyName)) {
-      copyName = `${original.name} (副本${counter})`;
+      copyName = `${original.name} (Copy ${counter})`;
       counter++;
     }
 
-    const newScene: DemoScene = {
-      ...original,
+    const newScene: SceneAsset = {
+      ...JSON.parse(JSON.stringify(original)),
       id: generateSceneId(copyName),
       name: copyName,
     };
@@ -120,7 +131,7 @@ export class SceneManager {
     return { scenes: [...scenes, newScene], newScene };
   }
 
-  static reorder(scenes: DemoScene[], fromIndex: number, toIndex: number): DemoScene[] {
+  static reorder(scenes: SceneAsset[], fromIndex: number, toIndex: number): SceneAsset[] {
     const result = [...scenes];
     const [moved] = result.splice(fromIndex, 1);
     result.splice(toIndex, 0, moved);
@@ -129,7 +140,7 @@ export class SceneManager {
 
   static getReferencedIds(dslText: string): Set<string> {
     const ids = new Set<string>();
-    const regex = /set:\s*"([^"]+)"/g;
+    const regex = /scene\s+(\w+)/g;
     let m: RegExpExecArray | null;
     while ((m = regex.exec(dslText)) !== null) ids.add(m[1]);
     return ids;

@@ -1,26 +1,28 @@
 /**
- * Character Manager — CRUD operations for DemoCharacter
+ * Character Manager — CRUD operations for image-based CharacterAsset
  */
 
-import { DemoCharacter } from '../../demo/demo-project';
+import { CharacterAsset, ExpressionSet } from '../project/types';
 
 export interface CharacterCreateInput {
   name: string;
-  color?: string;
-  expressions?: string[];
-  skeletonType?: 'humanoid' | 'beast' | 'chibi';
+  style?: CharacterAsset['style'];
+  parts?: Record<string, string>;
+  expressions?: Record<string, ExpressionSet>;
+  skeletonType?: string;
+  thumbnail?: string;
   description?: string;
 }
 
 export interface CharacterUpdateInput {
   name?: string;
-  color?: string;
-  expressions?: string[];
-  skeletonType?: 'humanoid' | 'beast' | 'chibi';
+  style?: CharacterAsset['style'];
+  skeletonType?: string;
+  thumbnail?: string;
   description?: string;
 }
 
-function generateId(name: string): string {
+function generateCharId(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9\u4e00-\u9fff]/g, '_')
@@ -28,21 +30,11 @@ function generateId(name: string): string {
     .replace(/^_|_$/g, '') + '_' + Date.now().toString(36);
 }
 
-const DEFAULT_EXPRESSIONS = ['neutral', 'happy', 'angry', 'shocked', 'smirk', 'crying'];
-
-const PALETTE = [
-  '#4caf50', '#f44336', '#2196f3', '#9c27b0', '#ff9800',
-  '#00bcd4', '#e91e63', '#8bc34a', '#ff5722', '#607d8b',
-];
-
 export class CharacterManager {
-  /**
-   * Create a new character with sensible defaults.
-   */
   static create(
-    characters: DemoCharacter[],
+    characters: CharacterAsset[],
     input: CharacterCreateInput,
-  ): { characters: DemoCharacter[]; newCharacter: DemoCharacter } {
+  ): { characters: CharacterAsset[]; newCharacter: CharacterAsset } {
     if (!input.name || input.name.trim().length === 0) {
       throw new Error('Character name is required');
     }
@@ -50,113 +42,112 @@ export class CharacterManager {
       throw new Error(`Character "${input.name}" already exists`);
     }
 
-    const newCharacter: DemoCharacter = {
-      id: generateId(input.name),
+    const newCharacter: CharacterAsset = {
+      id: generateCharId(input.name),
       name: input.name.trim(),
-      color: input.color ?? PALETTE[characters.length % PALETTE.length],
-      expressions: input.expressions ?? [...DEFAULT_EXPRESSIONS],
+      style: input.style ?? 'humanoid',
+      parts: input.parts ?? {},
+      expressions: input.expressions ?? {},
       skeletonType: input.skeletonType ?? 'humanoid',
+      thumbnail: input.thumbnail,
       description: input.description ?? '',
     };
 
-    return {
-      characters: [...characters, newCharacter],
-      newCharacter,
-    };
+    return { characters: [...characters, newCharacter], newCharacter };
   }
 
-  /**
-   * Update an existing character.
-   */
   static update(
-    characters: DemoCharacter[],
-    characterId: string,
+    characters: CharacterAsset[],
+    charId: string,
     input: CharacterUpdateInput,
-  ): DemoCharacter[] {
-    const idx = characters.findIndex((c) => c.id === characterId);
-    if (idx === -1) throw new Error(`Character "${characterId}" not found`);
+  ): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
 
     if (input.name !== undefined) {
-      const duplicate = characters.find(
-        (c) => c.name === input.name!.trim() && c.id !== characterId,
-      );
-      if (duplicate) throw new Error(`Character name "${input.name}" already exists`);
+      const dup = characters.find((c) => c.name === input.name!.trim() && c.id !== charId);
+      if (dup) throw new Error(`Character name "${input.name}" already exists`);
     }
 
     const updated = [...characters];
     updated[idx] = {
       ...updated[idx],
       ...(input.name !== undefined && { name: input.name.trim() }),
-      ...(input.color !== undefined && { color: input.color }),
-      ...(input.expressions !== undefined && { expressions: input.expressions }),
+      ...(input.style !== undefined && { style: input.style }),
       ...(input.skeletonType !== undefined && { skeletonType: input.skeletonType }),
+      ...(input.thumbnail !== undefined && { thumbnail: input.thumbnail }),
       ...(input.description !== undefined && { description: input.description }),
     };
     return updated;
   }
 
-  /**
-   * Remove a character by id.
-   */
-  static remove(characters: DemoCharacter[], characterId: string): DemoCharacter[] {
-    const idx = characters.findIndex((c) => c.id === characterId);
-    if (idx === -1) throw new Error(`Character "${characterId}" not found`);
-    return characters.filter((c) => c.id !== characterId);
+  /** Update a specific body part image */
+  static updatePart(
+    characters: CharacterAsset[],
+    charId: string,
+    partKey: string,
+    imageData: string,
+  ): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
+
+    const updated = [...characters];
+    updated[idx] = {
+      ...updated[idx],
+      parts: { ...updated[idx].parts, [partKey]: imageData },
+    };
+    return updated;
   }
 
-  /**
-   * Duplicate a character with a new id and name suffix.
-   */
-  static duplicate(characters: DemoCharacter[], characterId: string): {
-    characters: DemoCharacter[];
-    newCharacter: DemoCharacter;
-  } {
-    const original = characters.find((c) => c.id === characterId);
-    if (!original) throw new Error(`Character "${characterId}" not found`);
+  /** Remove a body part image */
+  static removePart(
+    characters: CharacterAsset[],
+    charId: string,
+    partKey: string,
+  ): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
 
-    let copyName = original.name + ' (副本)';
+    const updated = [...characters];
+    const newParts = { ...updated[idx].parts };
+    delete newParts[partKey];
+    updated[idx] = { ...updated[idx], parts: newParts };
+    return updated;
+  }
+
+  static remove(characters: CharacterAsset[], charId: string): CharacterAsset[] {
+    const idx = characters.findIndex((c) => c.id === charId);
+    if (idx === -1) throw new Error(`Character "${charId}" not found`);
+    return characters.filter((c) => c.id !== charId);
+  }
+
+  static duplicate(characters: CharacterAsset[], charId: string): {
+    characters: CharacterAsset[];
+    newCharacter: CharacterAsset;
+  } {
+    const original = characters.find((c) => c.id === charId);
+    if (!original) throw new Error(`Character "${charId}" not found`);
+
+    let copyName = original.name + ' (Copy)';
     let counter = 2;
     while (characters.some((c) => c.name === copyName)) {
-      copyName = `${original.name} (副本${counter})`;
+      copyName = `${original.name} (Copy ${counter})`;
       counter++;
     }
 
-    const newCharacter: DemoCharacter = {
-      ...original,
-      id: generateId(copyName),
+    const newCharacter: CharacterAsset = {
+      ...JSON.parse(JSON.stringify(original)),
+      id: generateCharId(copyName),
       name: copyName,
     };
 
-    return {
-      characters: [...characters, newCharacter],
-      newCharacter,
-    };
+    return { characters: [...characters, newCharacter], newCharacter };
   }
 
-  /**
-   * Reorder a character in the list.
-   */
-  static reorder(
-    characters: DemoCharacter[],
-    fromIndex: number,
-    toIndex: number,
-  ): DemoCharacter[] {
+  static reorder(characters: CharacterAsset[], fromIndex: number, toIndex: number): CharacterAsset[] {
     const result = [...characters];
     const [moved] = result.splice(fromIndex, 1);
     result.splice(toIndex, 0, moved);
     return result;
-  }
-
-  /**
-   * Get characters referenced in DSL text.
-   */
-  static getReferencedIds(dslText: string): Set<string> {
-    const ids = new Set<string>();
-    const placeRegex = /place\s+(\w+)/g;
-    const enterRegex = /(\w+)\s+enter-from/g;
-    let m: RegExpExecArray | null;
-    while ((m = placeRegex.exec(dslText)) !== null) ids.add(m[1]);
-    while ((m = enterRegex.exec(dslText)) !== null) ids.add(m[1]);
-    return ids;
   }
 }

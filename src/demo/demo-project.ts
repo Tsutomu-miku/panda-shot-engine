@@ -1,378 +1,247 @@
-// ============================================================
-// panda-shot-engine — Demo Project Data
-// A complete 3-shot "客栈相遇" (Inn Encounter) story
-// ============================================================
+/**
+ * Demo Project — Sample data using image-based character system
+ * 
+ * In a real app, images would be loaded from files.
+ * Here we use inline SVG data URLs as placeholder illustrations.
+ */
 
-// ─── Demo Character Definitions ─────────────────────────────
+import { CharacterAsset, SceneAsset, ExpressionSet, DslShot, PandaProject } from '../core/project/types';
 
-export interface DemoCharacter {
-  id: string;
-  name: string;
-  color: string;
-  expressions: string[];
-  skeletonType: 'humanoid' | 'beast' | 'chibi';
-  description: string;
+// ─── Placeholder SVG generators ─────────────────────────────
+
+function svgDataUrl(svg: string): string {
+  return 'data:image/svg+xml;base64,' + btoa(svg);
 }
 
-export const DEMO_CHARACTERS: DemoCharacter[] = [
+function makePartSvg(label: string, color: string, w = 64, h = 64): string {
+  return svgDataUrl(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+    `<rect width="${w}" height="${h}" rx="8" fill="${color}" opacity="0.8"/>` +
+    `<text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-size="10" font-family="sans-serif">${label}</text>` +
+    `</svg>`
+  );
+}
+
+function makeExpressionSvg(emoji: string, color: string, w = 48, h = 48): string {
+  return svgDataUrl(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+    `<circle cx="${w/2}" cy="${h/2}" r="${w/2 - 2}" fill="${color}" opacity="0.3"/>` +
+    `<text x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" font-size="24">${emoji}</text>` +
+    `</svg>`
+  );
+}
+
+function makeThumbnailSvg(label: string, color: string): string {
+  return svgDataUrl(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80">` +
+    `<rect width="80" height="80" rx="12" fill="${color}"/>` +
+    `<text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-size="12" font-family="sans-serif">${label}</text>` +
+    `</svg>`
+  );
+}
+
+// ─── Demo Expression Sets ───────────────────────────────────
+
+function makeExpressions(color: string): Record<string, ExpressionSet> {
+  return {
+    neutral: {
+      id: 'neutral', name: 'Neutral',
+      eyesImage: makeExpressionSvg('👀', color),
+      mouthImage: makeExpressionSvg('😐', color),
+      thumbnail: makeExpressionSvg('😐', color),
+    },
+    happy: {
+      id: 'happy', name: 'Happy',
+      eyesImage: makeExpressionSvg('😊', color),
+      mouthImage: makeExpressionSvg('😄', color),
+      thumbnail: makeExpressionSvg('😄', color),
+    },
+    angry: {
+      id: 'angry', name: 'Angry',
+      eyesImage: makeExpressionSvg('😠', color),
+      mouthImage: makeExpressionSvg('😤', color),
+      eyebrowImage: makeExpressionSvg('🤨', color),
+      overlayImage: makeExpressionSvg('💢', '#f38ba8'),
+      thumbnail: makeExpressionSvg('😠', color),
+    },
+    surprised: {
+      id: 'surprised', name: 'Surprised',
+      eyesImage: makeExpressionSvg('😲', color),
+      mouthImage: makeExpressionSvg('😮', color),
+      thumbnail: makeExpressionSvg('😮', color),
+    },
+    sad: {
+      id: 'sad', name: 'Sad',
+      eyesImage: makeExpressionSvg('😢', color),
+      mouthImage: makeExpressionSvg('😞', color),
+      overlayImage: makeExpressionSvg('💧', '#89b4fa'),
+      thumbnail: makeExpressionSvg('😢', color),
+    },
+    smirk: {
+      id: 'smirk', name: 'Smirk',
+      eyesImage: makeExpressionSvg('😏', color),
+      mouthImage: makeExpressionSvg('😏', color),
+      thumbnail: makeExpressionSvg('😏', color),
+    },
+  };
+}
+
+// ─── Demo Characters ────────────────────────────────────────
+
+function makeCharacterParts(color: string, label: string): Record<string, string> {
+  return {
+    head: makePartSvg(`${label}\nHead`, color, 64, 64),
+    body: makePartSvg(`${label}\nBody`, color, 48, 72),
+    left_arm: makePartSvg('L.Arm', color, 24, 56),
+    right_arm: makePartSvg('R.Arm', color, 24, 56),
+    left_leg: makePartSvg('L.Leg', color, 28, 56),
+    right_leg: makePartSvg('R.Leg', color, 28, 56),
+  };
+}
+
+export const DEMO_CHARACTERS: CharacterAsset[] = [
   {
     id: 'hero',
-    name: '张三',
-    color: '#4caf50',
-    expressions: ['neutral', 'happy', 'angry', 'shocked', 'smirk', 'crying'],
+    name: 'Hero',
+    style: 'humanoid',
+    parts: makeCharacterParts('#89b4fa', 'Hero'),
+    expressions: makeExpressions('#89b4fa'),
     skeletonType: 'humanoid',
-    description: '主角，一位游历四方的熊猫侠客',
+    thumbnail: makeThumbnailSvg('Hero', '#1e3a5f'),
+    description: 'Main protagonist with blue theme',
   },
   {
     id: 'villain',
-    name: '赤蛟',
-    color: '#f44336',
-    expressions: ['neutral', 'angry', 'smirk', 'shocked', 'happy', 'crying'],
+    name: 'Villain',
+    style: 'humanoid',
+    parts: makeCharacterParts('#f38ba8', 'Villain'),
+    expressions: makeExpressions('#f38ba8'),
     skeletonType: 'humanoid',
-    description: '反派，江湖上令人闻风丧胆的恶人',
+    thumbnail: makeThumbnailSvg('Villain', '#5f1e2e'),
+    description: 'Antagonist with red theme',
   },
   {
     id: 'sidekick',
-    name: '李四',
-    color: '#2196f3',
-    expressions: ['neutral', 'happy', 'shocked', 'crying', 'angry', 'smirk'],
-    skeletonType: 'humanoid',
-    description: '张三的好友，客栈常客',
+    name: 'Sidekick',
+    style: 'chibi',
+    parts: makeCharacterParts('#a6e3a1', 'Sidekick'),
+    expressions: makeExpressions('#a6e3a1'),
+    skeletonType: 'chibi',
+    thumbnail: makeThumbnailSvg('Sidekick', '#1e5f2e'),
+    description: 'Comic relief chibi character',
   },
   {
     id: 'elder',
-    name: '白长老',
-    color: '#9c27b0',
-    expressions: ['neutral', 'happy', 'angry', 'shocked', 'smirk', 'crying'],
+    name: 'Elder',
+    style: 'humanoid',
+    parts: makeCharacterParts('#cba6f7', 'Elder'),
+    expressions: makeExpressions('#cba6f7'),
     skeletonType: 'humanoid',
-    description: '隐居客栈的武林前辈',
+    thumbnail: makeThumbnailSvg('Elder', '#3a1e5f'),
+    description: 'Wise elder character',
   },
   {
-    id: 'merchant',
-    name: '王掌柜',
-    color: '#ff9800',
-    expressions: ['neutral', 'happy', 'shocked', 'angry', 'smirk', 'crying'],
-    skeletonType: 'chibi',
-    description: '客栈掌柜，热情好客',
+    id: 'beast',
+    name: 'Wild Beast',
+    style: 'beast',
+    parts: makeCharacterParts('#fab387', 'Beast'),
+    expressions: makeExpressions('#fab387'),
+    skeletonType: 'beast',
+    thumbnail: makeThumbnailSvg('Beast', '#5f3a1e'),
+    description: 'A wild beast creature',
   },
 ];
 
-// ─── Demo Scene Definitions ─────────────────────────────────
+// ─── Demo Scenes ────────────────────────────────────────────
 
-export interface DemoScene {
-  id: string;
-  name: string;
-  color: string;
-  gradientStart: string;
-  gradientEnd: string;
-  description: string;
-  floorY: number;
-}
-
-export const DEMO_SCENES: DemoScene[] = [
+export const DEMO_SCENES: SceneAsset[] = [
   {
-    id: 'inn_interior',
-    name: '客栈内景',
+    id: 'tavern_interior',
+    name: 'Tavern Interior',
     color: '#795548',
     gradientStart: '#3e2723',
     gradientEnd: '#1a0e0a',
-    description: '温暖的客栈大堂，烛火摇曳',
+    description: 'A warm tavern with wooden furniture',
     floorY: 0.78,
   },
   {
-    id: 'street_ancient',
-    name: '古街',
-    color: '#8d6e63',
-    gradientStart: '#5d4037',
-    gradientEnd: '#2c1810',
-    description: '古代街道，青石板路',
-    floorY: 0.80,
-  },
-  {
-    id: 'throne_room',
-    name: '大殿',
-    color: '#fdd835',
-    gradientStart: '#4a1a00',
-    gradientEnd: '#1a0800',
-    description: '金碧辉煌的宫殿大殿',
-    floorY: 0.82,
-  },
-  {
-    id: 'forest_night',
-    name: '夜林',
+    id: 'dark_forest',
+    name: 'Dark Forest',
     color: '#1b5e20',
     gradientStart: '#0d2818',
     gradientEnd: '#050f08',
-    description: '月光下的竹林',
-    floorY: 0.76,
+    description: 'A spooky forest at night',
+    floorY: 0.82,
   },
   {
-    id: 'mountain_top',
-    name: '山巅',
+    id: 'mountain_cliff',
+    name: 'Mountain Cliff',
     color: '#546e7a',
-    gradientStart: '#37474f',
-    gradientEnd: '#1a2530',
-    description: '云雾缭绕的高山之巅',
-    floorY: 0.74,
+    gradientStart: '#263238',
+    gradientEnd: '#0d1518',
+    description: 'High cliff overlooking the valley',
+    floorY: 0.75,
   },
   {
-    id: 'marketplace',
-    name: '集市',
-    color: '#e65100',
-    gradientStart: '#6d3200',
-    gradientEnd: '#2a1400',
-    description: '热闹的集市，摊位林立',
+    id: 'throne_room',
+    name: 'Throne Room',
+    color: '#b71c1c',
+    gradientStart: '#3e0a0a',
+    gradientEnd: '#1a0404',
+    description: 'Grand throne room of the castle',
     floorY: 0.80,
+  },
+  {
+    id: 'village_square',
+    name: 'Village Square',
+    color: '#ff6f00',
+    gradientStart: '#4a2000',
+    gradientEnd: '#1a0b00',
+    description: 'Busy village marketplace',
+    floorY: 0.78,
+  },
+  {
+    id: 'moonlit_lake',
+    name: 'Moonlit Lake',
+    color: '#0d47a1',
+    gradientStart: '#0a1929',
+    gradientEnd: '#040d17',
+    description: 'A serene lake under moonlight',
+    floorY: 0.85,
   },
 ];
 
-// ─── Demo DSL Text ──────────────────────────────────────────
+// ─── Demo DSL Story ─────────────────────────────────────────
 
-/** Shot 1: 客栈内景 — 李四在客栈喝酒，张三走进来 */
-export const SHOT_1_DSL = `shot "客栈相遇_001":
-  duration: 8s
-  set: "inn_interior"
-  bgm: "inn_ambient" volume 0.6 fade-in 2s
-
-  place sidekick at left-third facing right scale 1.0
-  place merchant at far-right facing left scale 0.85
-
-  at 0s:
-    camera wide
-    sidekick expression happy
-    merchant expression neutral
-    sfx "inn_ambience"
-
-  at 1s:
-    sidekick say "掌柜的，再来一壶好酒！" voice "sidekick_cheerful"
-    sidekick expression happy
-
-  at 2.5s:
-    merchant say "好嘞！客官稍等！" voice "merchant_warm"
-    merchant expression happy
-    sfx "pouring_wine"
-
-  at 4s:
-    camera medium
-    sfx "door_open"
-    hero enter-from far-left to center-left facing right action walk
-    sidekick expression shocked
-
-  at 5.5s:
-    camera close-up hero
-    hero expression neutral
-    hero say "李四，好久不见。" voice "hero_calm"
-
-  at 7s:
-    camera wide
-    sidekick expression happy
-    sidekick say "张三！你终于来了！" voice "sidekick_excited"
-
-  transition: dissolve 0.5s`;
-
-/** Shot 2: 对话 — 两人对话，各种表情变化，镜头切换 */
-export const SHOT_2_DSL = `shot "客栈相遇_002":
-  duration: 12s
-  set: "inn_interior"
-
-  place hero at center-left facing right
-  place sidekick at center-right facing left
-  place merchant at far-right facing left scale 0.8
-
-  at 0s:
-    camera medium
-    hero expression neutral
-    sidekick expression happy
-    merchant expression neutral
-
-  at 1s:
-    camera close-up sidekick
-    sidekick say "这些日子你去了哪里？我们都很担心你。" voice "sidekick_worried"
-    sidekick expression crying
-
-  at 3s:
-    camera close-up hero
-    hero expression smirk
-    hero say "去了一趟北疆，遇到了些麻烦。" voice "hero_calm"
-
-  at 5s:
-    camera medium
-    sidekick expression shocked
-    sidekick say "北疆？那里不是赤蛟的地盘吗！" voice "sidekick_shocked"
-    sfx "dramatic_sting"
-
-  at 7s:
-    camera close-up hero
-    hero expression angry
-    hero say "没错，我与他交过手，他武功确实了得。" voice "hero_serious"
-
-  at 9s:
-    camera wide
-    sfx "thunder_rumble"
-    merchant expression shocked
-    sidekick expression shocked
-
-  at 10s:
-    sidekick say "他…他不会追到这里来吧？" voice "sidekick_nervous"
-    sidekick expression crying
-
-  at 11s:
-    hero expression neutral
-    hero say "放心，我已经甩掉了他。" voice "hero_reassuring"
-
-  transition: cut`;
-
-/** Shot 3: 打斗 — 突然闯入反派，张三拔剑迎战 */
-export const SHOT_3_DSL = `shot "客栈相遇_003":
-  duration: 10s
-  set: "inn_interior"
-
-  place hero at center-left facing right
-  place sidekick at left-third facing right
-
-  at 0s:
-    camera wide
-    sfx "door_slam"
-    sfx "dramatic_impact"
-    hero expression shocked
-    sidekick expression shocked
-
-  at 0.5s:
-    villain enter-from far-right to right-third facing left action walk
-    camera medium
-    vfx dust_cloud at right-third
-
-  at 1.5s:
-    camera close-up villain
-    villain expression smirk
-    villain say "张三，你以为逃得掉吗？" voice "villain_menacing"
-    sfx "villain_laugh"
-
-  at 3s:
-    camera wide
-    hero expression angry
-    hero say "赤蛟！你竟敢追到这里！" voice "hero_angry"
-    hero action sword_draw
-
-  at 4.5s:
-    sidekick expression shocked
-    sidekick say "快跑！" voice "sidekick_panic"
-    sidekick action dodge
-    sfx "chair_crash"
-
-  at 5.5s:
-    camera close-up hero
-    hero action sword_slash target villain
-    sfx "sword_swing"
-    vfx slash_effect at center
-    camera wide shake 0.3s
-
-  at 6.5s:
-    villain expression angry
-    villain action block
-    villain say "就凭你？" voice "villain_taunt"
-    sfx "metal_clash"
-    vfx spark_effect at center
-
-  at 8s:
-    camera wide shake 0.5s
-    hero action kick target villain
-    villain action dodge
-    sfx "whoosh"
-    vfx dust_cloud at center
-
-  at 9s:
-    camera close-up hero
-    hero expression angry
-    hero say "今日，必分高下！" voice "hero_determined"
-    sfx "dramatic_music_hit"
-
-  transition: fade-black 1s`;
-
-/** Complete DSL combining all 3 shots */
-export const FULL_DEMO_DSL = [SHOT_1_DSL, SHOT_2_DSL, SHOT_3_DSL].join('\n\n');
-
-// ─── Utility: Find scene by ID ──────────────────────────────
-
-export function findScene(id: string): DemoScene | undefined {
-  return DEMO_SCENES.find((s) => s.id === id);
-}
-
-// ─── Utility: Find character by ID ──────────────────────────
-
-export function findCharacter(id: string): DemoCharacter | undefined {
-  return DEMO_CHARACTERS.find((c) => c.id === id);
-}
-
-// ─── Scene Rendering Presets ────────────────────────────────
-
-export interface SceneRenderPreset {
-  bgGradientStart: string;
-  bgGradientEnd: string;
-  floorColor: string;
-  floorHighlight: string;
-  ambientParticles: boolean;
-  lightingColor: string;
-  lightingIntensity: number;
-}
-
-export const SCENE_RENDER_PRESETS: Record<string, SceneRenderPreset> = {
-  inn_interior: {
-    bgGradientStart: '#3e2723',
-    bgGradientEnd: '#1a0e0a',
-    floorColor: '#4e342e',
-    floorHighlight: '#6d4c41',
-    ambientParticles: true,
-    lightingColor: '#ffab40',
-    lightingIntensity: 0.3,
+export const DEMO_SHOTS: DslShot[] = [
+  {
+    id: 'shot_001',
+    label: 'Scene 1 – Tavern Meeting',
+    dsl: `scene tavern_interior\n  camera wide\n  enter hero from left\n    expression happy\n    walk_to 0.3\n  enter sidekick from right\n    expression surprised\n    walk_to 0.7\n  hero\n    action wave\n    say "Ready for adventure?"\n  sidekick\n    expression happy\n    action nod\n    say "Always!"`,
+    duration: 5,
   },
-  street_ancient: {
-    bgGradientStart: '#455a64',
-    bgGradientEnd: '#1c2a33',
-    floorColor: '#607d8b',
-    floorHighlight: '#78909c',
-    ambientParticles: false,
-    lightingColor: '#b0bec5',
-    lightingIntensity: 0.2,
+  {
+    id: 'shot_002',
+    label: 'Scene 2 – Forest Encounter',
+    dsl: `scene dark_forest\n  camera tracking\n  enter hero from left\n    expression neutral\n    walk_to 0.4\n  enter villain from right\n    expression smirk\n    walk_to 0.6\n  villain\n    action sword_slash\n    say "Going somewhere?"\n  hero\n    expression angry\n    action punch\n    say "Out of my way!"`,
+    duration: 6,
   },
-  throne_room: {
-    bgGradientStart: '#4a1a00',
-    bgGradientEnd: '#1a0800',
-    floorColor: '#5d4037',
-    floorHighlight: '#8d6e63',
-    ambientParticles: true,
-    lightingColor: '#ffd54f',
-    lightingIntensity: 0.5,
+  {
+    id: 'shot_003',
+    label: 'Scene 3 – Victory',
+    dsl: `scene mountain_cliff\n  camera close_up hero\n  hero\n    expression happy\n    action idle\n    say "We did it!"\n  enter sidekick from left\n    expression happy\n    action jump\n  camera wide\n  hero\n    action wave\n  sidekick\n    action wave`,
+    duration: 4,
   },
-  forest_night: {
-    bgGradientStart: '#1b3a1b',
-    bgGradientEnd: '#050f08',
-    floorColor: '#2e4a2e',
-    floorHighlight: '#3a5a3a',
-    ambientParticles: true,
-    lightingColor: '#b2dfdb',
-    lightingIntensity: 0.15,
-  },
-  mountain_top: {
-    bgGradientStart: '#37474f',
-    bgGradientEnd: '#1a2530',
-    floorColor: '#546e7a',
-    floorHighlight: '#78909c',
-    ambientParticles: true,
-    lightingColor: '#e0e0e0',
-    lightingIntensity: 0.25,
-  },
-  marketplace: {
-    bgGradientStart: '#6d3200',
-    bgGradientEnd: '#2a1400',
-    floorColor: '#795548',
-    floorHighlight: '#a1887f',
-    ambientParticles: false,
-    lightingColor: '#ffe0b2',
-    lightingIntensity: 0.4,
-  },
-};
+];
 
-export function getScenePreset(sceneId: string): SceneRenderPreset {
-  return SCENE_RENDER_PRESETS[sceneId] ?? SCENE_RENDER_PRESETS['inn_interior'];
+// ─── Full Demo Project ──────────────────────────────────────
+
+export function createDemoProject(): PandaProject {
+  return {
+    name: 'Demo Project',
+    shots: DEMO_SHOTS,
+    characters: DEMO_CHARACTERS,
+    scenes: DEMO_SCENES,
+    customActions: [],
+  };
 }

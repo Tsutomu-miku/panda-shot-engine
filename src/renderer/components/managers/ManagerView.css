@@ -1,0 +1,69 @@
+/* ManagerView — Overlay container for management panels */
+
+.manager-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e2e;
+}
+
+.manager-topbar {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  background: #181825;
+  border-bottom: 1px solid #313244;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.manager-topbar__back {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #313244;
+  color: #cdd6f4;
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 12px;
+  transition: all 0.15s;
+}
+
+.manager-topbar__back:hover {
+  background: #45475a;
+}
+
+.manager-tab {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: #6c7086;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+}
+
+.manager-tab:hover {
+  color: #a6adc8;
+  background: #252538;
+}
+
+.manager-tab.active {
+  color: #cdd6f4;
+  background: #1e1e2e;
+  border-bottom-color: #7c3aed;
+}
+
+.manager-body {
+  flex: 1;
+  overflow: hidden;
+}

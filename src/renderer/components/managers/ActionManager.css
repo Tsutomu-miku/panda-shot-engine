@@ -1,0 +1,93 @@
+.action-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1e1e2e;
+  color: #cdd6f4;
+}
+
+.action-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  margin-left: 6px;
+}
+
+.action-badge--builtin {
+  background: #31324480;
+  color: #6c7086;
+}
+
+.action-badge--custom {
+  background: #7c3aed30;
+  color: #b4befe;
+}
+
+.action-badge--loop {
+  background: #a6e3a130;
+  color: #a6e3a1;
+}
+
+.keyframe-list {
+  margin-top: 8px;
+}
+
+.keyframe-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #252538;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.keyframe-item__time {
+  font-weight: 600;
+  color: #b4befe;
+  min-width: 40px;
+}
+
+.keyframe-item__bones {
+  flex: 1;
+  color: #6c7086;
+}
+
+.keyframe-item__remove {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6c7086;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.keyframe-item__remove:hover {
+  background: #f38ba830;
+  color: #f38ba8;
+}
+
+.easing-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.easing-option {
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: #313244;
+  color: #6c7086;
+  cursor: pointer;
+  border: none;
+}
+
+.easing-option.active {
+  background: #7c3aed40;
+  color: #b4befe;
+}

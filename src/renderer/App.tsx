@@ -1,293 +1,413 @@
-import React, { useState } from 'react';
+// ============================================================
+// panda-shot-engine — Main App Component
+// Enhanced with demo loading, keyboard shortcuts, and
+// error boundary for production resilience.
+// ============================================================
 
-// ── Asset Panel (Left Sidebar) ────────────────────────────────────────────────
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { EditorProvider, useEditor } from './hooks/useEditorState';
+import EditorLayout from './components/layout/EditorLayout';
+import Toolbar from './components/layout/Toolbar';
+import { FULL_DEMO_DSL, DEMO_CHARACTERS, DEMO_SCENES } from '../demo/demo-project';
+import { parseShots } from '../core/dsl/parser';
+import { serializeShots } from '../core/dsl/serializer';
 
-function AssetPanel(): React.ReactElement {
-  const [activeTab, setActiveTab] = useState<'characters' | 'props' | 'scenes'>('characters');
+import './styles/global.css';
+import './styles/components.css';
 
-  const tabs = [
-    { key: 'characters' as const, label: '角色' },
-    { key: 'props' as const, label: '道具' },
-    { key: 'scenes' as const, label: '场景' },
-  ];
+// ─── Error Boundary ─────────────────────────────────────────
 
-  const placeholderItems: Record<string, string[]> = {
-    characters: ['熊猫头 - 默认', '熊猫头 - 开心', '虾头 - 默认', '虾头 - 惊讶'],
-    props: ['对话气泡', '特效 - 闪光', '特效 - 爆炸', '道具 - 帽子'],
-    scenes: ['默认背景', '户外场景', '室内场景', '纯色背景'],
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  errorInfo: React.ErrorInfo | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[PandaShotEngine] Uncaught error:', error, errorInfo);
+    this.setState({ errorInfo });
+  }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-boundary">
+          <div className="error-boundary-content">
+            <div className="error-boundary-icon">!</div>
+            <h2 className="error-boundary-title">Something went wrong</h2>
+            <p className="error-boundary-message">
+              {this.state.error?.message ?? 'An unexpected error occurred'}
+            </p>
+            {this.state.errorInfo && (
+              <details className="error-boundary-details">
+                <summary>Technical Details</summary>
+                <pre className="error-boundary-stack">
+                  {this.state.error?.stack}
+                </pre>
+                <pre className="error-boundary-component-stack">
+                  {this.state.errorInfo.componentStack}
+                </pre>
+              </details>
+            )}
+            <div className="error-boundary-actions">
+              <button
+                className="error-boundary-btn error-boundary-btn--primary"
+                onClick={this.handleReset}
+              >
+                Try Again
+              </button>
+              <button
+                className="error-boundary-btn"
+                onClick={() => window.location.reload()}
+              >
+                Reload App
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// ─── Splash Screen ──────────────────────────────────────────
+
+function SplashScreen({ onLoadDemo, onNewProject }: {
+  onLoadDemo: () => void;
+  onNewProject: () => void;
+}) {
   return (
-    <div className="panel asset-panel">
-      <div className="panel-header">
-        <span className="panel-title">素材库</span>
-      </div>
-      <div className="asset-tabs">
-        {tabs.map((tab) => (
+    <div className="splash-screen">
+      <div className="splash-content">
+        <div className="splash-logo">
+          <div className="splash-logo-panda">P</div>
+          <h1 className="splash-title">Panda Shot Engine</h1>
+          <p className="splash-subtitle">Visual Story DSL Editor</p>
+        </div>
+
+        <div className="splash-actions">
           <button
-            key={tab.key}
-            className={`asset-tab ${activeTab === tab.key ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.key)}
+            className="splash-btn splash-btn--primary"
+            onClick={onLoadDemo}
           >
-            {tab.label}
+            <span className="splash-btn-icon">D</span>
+            <div className="splash-btn-text">
+              <span className="splash-btn-label">Load Demo Project</span>
+              <span className="splash-btn-desc">
+                3-shot "Inn Encounter" story with 5 characters
+              </span>
+            </div>
           </button>
-        ))}
-      </div>
-      <div className="asset-list">
-        {placeholderItems[activeTab].map((item, index) => (
-          <div key={index} className="asset-item">
-            <div className="asset-thumbnail" />
-            <span className="asset-name">{item}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-// ── Canvas Preview (Center Top) ───────────────────────────────────────────────
-
-function CanvasPreview(): React.ReactElement {
-  return (
-    <div className="panel canvas-panel">
-      <div className="panel-header">
-        <span className="panel-title">场景预览</span>
-        <div className="canvas-toolbar">
-          <button className="toolbar-btn" title="缩放适配">⊞</button>
-          <button className="toolbar-btn" title="放大">+</button>
-          <button className="toolbar-btn" title="缩小">−</button>
-          <span className="zoom-label">100%</span>
-        </div>
-      </div>
-      <div className="canvas-area">
-        <div className="canvas-placeholder">
-          <div className="canvas-empty-state">
-            <div className="empty-icon">🎬</div>
-            <p>将素材拖拽到画布开始创作</p>
-            <p className="empty-hint">或在 DSL 编辑器中编写动画脚本</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Timeline Panel (Center Bottom) ────────────────────────────────────────────
-
-function TimelinePanel(): React.ReactElement {
-  const tracks = [
-    { name: '熊猫头', type: 'character' },
-    { name: '对话气泡', type: 'prop' },
-    { name: '背景', type: 'scene' },
-  ];
-
-  return (
-    <div className="panel timeline-panel">
-      <div className="panel-header">
-        <span className="panel-title">时间线</span>
-        <div className="timeline-controls">
-          <button className="toolbar-btn" title="回到开头">⏮</button>
-          <button className="toolbar-btn play-btn" title="播放">▶</button>
-          <button className="toolbar-btn" title="到末尾">⏭</button>
-          <span className="time-display">00:00.000 / 00:05.000</span>
-        </div>
-      </div>
-      <div className="timeline-body">
-        <div className="timeline-tracks-header">
-          {tracks.map((track, index) => (
-            <div key={index} className="track-label">
-              <span className="track-type-indicator" data-type={track.type} />
-              {track.name}
+          <button className="splash-btn" onClick={onNewProject}>
+            <span className="splash-btn-icon">+</span>
+            <div className="splash-btn-text">
+              <span className="splash-btn-label">New Empty Project</span>
+              <span className="splash-btn-desc">
+                Start from scratch with a blank shot
+              </span>
             </div>
-          ))}
+          </button>
         </div>
-        <div className="timeline-tracks-area">
-          <div className="timeline-ruler">
-            {Array.from({ length: 11 }, (_, i) => (
-              <span key={i} className="ruler-mark">{(i * 0.5).toFixed(1)}s</span>
-            ))}
+
+        <div className="splash-info">
+          <div className="splash-info-item">
+            <span className="splash-info-key">Space</span>
+            <span className="splash-info-desc">Play / Pause</span>
           </div>
-          {tracks.map((_, index) => (
-            <div key={index} className="track-row">
-              <div className="keyframe-block" style={{ left: '5%', width: '30%' }} />
-            </div>
-          ))}
-          <div className="playhead" style={{ left: '0%' }} />
+          <div className="splash-info-item">
+            <span className="splash-info-key">Ctrl+Z</span>
+            <span className="splash-info-desc">Undo</span>
+          </div>
+          <div className="splash-info-item">
+            <span className="splash-info-key">Ctrl+Shift+Z</span>
+            <span className="splash-info-desc">Redo</span>
+          </div>
+          <div className="splash-info-item">
+            <span className="splash-info-key">1 / 2 / 3</span>
+            <span className="splash-info-desc">Switch View Mode</span>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ── DSL Editor Panel (Right Sidebar Top) ──────────────────────────────────────
+// ─── Keyboard Shortcuts ─────────────────────────────────────
 
-function DSLEditorPanel(): React.ReactElement {
-  const [dslCode, setDslCode] = useState<string>(
-`# Panda Shot DSL
-@scene "默认场景" {
-  background: "#1a1a30"
-  duration: 5s
+function KeyboardShortcuts() {
+  const { state, dispatch, currentShot } = useEditor();
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept when typing in inputs
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      const ctrl = e.ctrlKey || e.metaKey;
+      const shift = e.shiftKey;
+
+      // Space: Play / Pause
+      if (e.code === 'Space') {
+        e.preventDefault();
+        dispatch({ type: state.isPlaying ? 'PAUSE' : 'PLAY' });
+        return;
+      }
+
+      // Ctrl+Z: Undo
+      if (ctrl && !shift && e.code === 'KeyZ') {
+        e.preventDefault();
+        dispatch({ type: 'UNDO' });
+        return;
+      }
+
+      // Ctrl+Shift+Z or Ctrl+Y: Redo
+      if ((ctrl && shift && e.code === 'KeyZ') || (ctrl && e.code === 'KeyY')) {
+        e.preventDefault();
+        dispatch({ type: 'REDO' });
+        return;
+      }
+
+      // Delete / Backspace: Deselect or delete shot
+      if (e.code === 'Escape') {
+        e.preventDefault();
+        dispatch({ type: 'DESELECT' });
+        return;
+      }
+
+      // 1, 2, 3: View modes
+      if (e.code === 'Digit1' && !ctrl) {
+        dispatch({ type: 'SET_VIEW_MODE', mode: 'edit' });
+        return;
+      }
+      if (e.code === 'Digit2' && !ctrl) {
+        dispatch({ type: 'SET_VIEW_MODE', mode: 'preview' });
+        return;
+      }
+      if (e.code === 'Digit3' && !ctrl) {
+        dispatch({ type: 'SET_VIEW_MODE', mode: 'split' });
+        return;
+      }
+
+      // Left / Right: Step through time
+      if (e.code === 'ArrowLeft' && !ctrl) {
+        e.preventDefault();
+        dispatch({ type: 'SEEK', time: Math.max(0, state.currentTime - 0.1) });
+        return;
+      }
+      if (e.code === 'ArrowRight' && !ctrl) {
+        e.preventDefault();
+        const maxTime = currentShot?.duration ?? 0;
+        dispatch({
+          type: 'SEEK',
+          time: Math.min(maxTime, state.currentTime + 0.1),
+        });
+        return;
+      }
+
+      // Up / Down: Navigate shots
+      if (e.code === 'ArrowUp' && !ctrl) {
+        e.preventDefault();
+        if (state.currentShotIndex > 0) {
+          dispatch({
+            type: 'SET_CURRENT_SHOT',
+            index: state.currentShotIndex - 1,
+          });
+        }
+        return;
+      }
+      if (e.code === 'ArrowDown' && !ctrl) {
+        e.preventDefault();
+        const maxIdx = (state.project?.shots.length ?? 1) - 1;
+        if (state.currentShotIndex < maxIdx) {
+          dispatch({
+            type: 'SET_CURRENT_SHOT',
+            index: state.currentShotIndex + 1,
+          });
+        }
+        return;
+      }
+
+      // Home: Seek to start
+      if (e.code === 'Home') {
+        e.preventDefault();
+        dispatch({ type: 'SEEK', time: 0 });
+        return;
+      }
+
+      // End: Seek to end
+      if (e.code === 'End') {
+        e.preventDefault();
+        dispatch({ type: 'SEEK', time: currentShot?.duration ?? 0 });
+        return;
+      }
+
+      // Ctrl+= / Ctrl+-: Zoom
+      if (ctrl && (e.code === 'Equal' || e.code === 'NumpadAdd')) {
+        e.preventDefault();
+        dispatch({ type: 'SET_ZOOM', zoom: state.zoom + 25 });
+        return;
+      }
+      if (ctrl && (e.code === 'Minus' || e.code === 'NumpadSubtract')) {
+        e.preventDefault();
+        dispatch({ type: 'SET_ZOOM', zoom: state.zoom - 25 });
+        return;
+      }
+
+      // Ctrl+0: Reset zoom
+      if (ctrl && e.code === 'Digit0') {
+        e.preventDefault();
+        dispatch({ type: 'SET_ZOOM', zoom: 100 });
+        return;
+      }
+
+      // Ctrl+N: New project
+      if (ctrl && e.code === 'KeyN') {
+        e.preventDefault();
+        dispatch({ type: 'NEW_PROJECT' });
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [state, dispatch, currentShot]);
+
+  return null;
 }
 
-@character "熊猫头" {
-  position: center
-  scale: 1.0
+// ─── Status Bar ─────────────────────────────────────────────
 
-  @keyframe 0s {
-    expression: "default"
-    opacity: 0
-  }
+function StatusBar() {
+  const { state, totalDuration } = useEditor();
 
-  @keyframe 0.5s {
-    expression: "default"
-    opacity: 1
-  }
-
-  @keyframe 2s {
-    expression: "happy"
-    move: [100, 0]
-  }
-}
-
-@prop "对话气泡" {
-  attach: "熊猫头"
-  offset: [0, -120]
-
-  @keyframe 1s { text: "你好!" }
-  @keyframe 3s { text: "再见~" }
-}`
-  );
+  const shotCount = state.project?.shots.length ?? 0;
+  const charCount = state.project?.characters.length ?? 0;
+  const errCount = state.dslErrors.length;
+  const warnCount = state.dslWarnings.length;
 
   return (
-    <div className="panel dsl-panel">
-      <div className="panel-header">
-        <span className="panel-title">DSL 编辑器</span>
-        <div className="dsl-toolbar">
-          <button className="toolbar-btn" title="运行">▶ 运行</button>
-          <button className="toolbar-btn" title="格式化">格式化</button>
-        </div>
+    <div className="status-bar">
+      <div className="status-bar-left">
+        <span className="status-item">
+          {shotCount} shot{shotCount !== 1 ? 's' : ''}
+        </span>
+        <span className="status-sep">|</span>
+        <span className="status-item">
+          {totalDuration.toFixed(1)}s total
+        </span>
+        <span className="status-sep">|</span>
+        <span className="status-item">
+          {charCount} character{charCount !== 1 ? 's' : ''}
+        </span>
       </div>
-      <div className="dsl-editor-area">
-        <textarea
-          className="dsl-textarea"
-          value={dslCode}
-          onChange={(e) => setDslCode(e.target.value)}
-          spellCheck={false}
-        />
+      <div className="status-bar-center">
+        {state.viewMode === 'edit' && 'Edit Mode'}
+        {state.viewMode === 'preview' && 'Preview Mode'}
+        {state.viewMode === 'split' && 'Split View'}
       </div>
-    </div>
-  );
-}
-
-// ── Properties Panel (Right Sidebar Bottom) ───────────────────────────────────
-
-function PropertiesPanel(): React.ReactElement {
-  return (
-    <div className="panel properties-panel">
-      <div className="panel-header">
-        <span className="panel-title">属性</span>
-      </div>
-      <div className="properties-body">
-        <div className="property-group">
-          <div className="property-group-title">变换</div>
-          <div className="property-row">
-            <label>位置 X</label>
-            <input type="number" className="property-input" defaultValue={0} />
-          </div>
-          <div className="property-row">
-            <label>位置 Y</label>
-            <input type="number" className="property-input" defaultValue={0} />
-          </div>
-          <div className="property-row">
-            <label>缩放</label>
-            <input type="number" className="property-input" defaultValue={1.0} step={0.1} />
-          </div>
-          <div className="property-row">
-            <label>旋转</label>
-            <input type="number" className="property-input" defaultValue={0} step={1} />
-          </div>
-        </div>
-        <div className="property-group">
-          <div className="property-group-title">外观</div>
-          <div className="property-row">
-            <label>透明度</label>
-            <input type="range" className="property-slider" min={0} max={1} step={0.01} defaultValue={1} />
-          </div>
-          <div className="property-row">
-            <label>混合模式</label>
-            <select className="property-select" defaultValue="normal">
-              <option value="normal">正常</option>
-              <option value="multiply">正片叠底</option>
-              <option value="screen">滤色</option>
-              <option value="overlay">叠加</option>
-            </select>
-          </div>
-        </div>
+      <div className="status-bar-right">
+        {errCount > 0 && (
+          <span className="status-errors">
+            {errCount} error{errCount !== 1 ? 's' : ''}
+          </span>
+        )}
+        {warnCount > 0 && (
+          <span className="status-warnings">
+            {warnCount} warning{warnCount !== 1 ? 's' : ''}
+          </span>
+        )}
+        {errCount === 0 && warnCount === 0 && (
+          <span className="status-ok">OK</span>
+        )}
+        <span className="status-sep">|</span>
+        <span className="status-item">Zoom: {state.zoom}%</span>
+        <span className="status-sep">|</span>
+        <span className="status-item">
+          Undo: {state.undoStack.length} | Redo: {state.redoStack.length}
+        </span>
       </div>
     </div>
   );
 }
 
-// ── Main App Layout ───────────────────────────────────────────────────────────
+// ─── App Inner (has access to editor context) ───────────────
 
-export function App(): React.ReactElement {
+function AppInner() {
+  const [showSplash, setShowSplash] = useState(false);
+  const { dispatch } = useEditor();
+
+  const handleLoadDemo = useCallback(() => {
+    try {
+      const shots = parseShots(FULL_DEMO_DSL);
+      dispatch({
+        type: 'SET_PROJECT',
+        project: {
+          name: 'Panda Shot Engine — Demo',
+          shots,
+          characters: [...DEMO_CHARACTERS],
+          scenes: [...DEMO_SCENES],
+        },
+        dslText: FULL_DEMO_DSL,
+      });
+    } catch (err) {
+      console.error('Failed to load demo:', err);
+    }
+    setShowSplash(false);
+  }, [dispatch]);
+
+  const handleNewProject = useCallback(() => {
+    dispatch({ type: 'NEW_PROJECT' });
+    setShowSplash(false);
+  }, [dispatch]);
+
+  if (showSplash) {
+    return (
+      <SplashScreen
+        onLoadDemo={handleLoadDemo}
+        onNewProject={handleNewProject}
+      />
+    );
+  }
+
   return (
-    <div className="app-container">
-      {/* Top Menu Bar */}
-      <div className="menu-bar">
-        <div className="menu-left">
-          <span className="app-logo">🐼</span>
-          <span className="app-title">Panda Shot Engine</span>
-        </div>
-        <div className="menu-center">
-          <button className="menu-item">文件</button>
-          <button className="menu-item">编辑</button>
-          <button className="menu-item">视图</button>
-          <button className="menu-item">动画</button>
-          <button className="menu-item">导出</button>
-          <button className="menu-item">帮助</button>
-        </div>
-        <div className="menu-right">
-          <span className="project-name">未命名项目</span>
-        </div>
-      </div>
-
-      {/* Main Editor Grid */}
-      <div className="editor-grid">
-        {/* Left Sidebar */}
-        <aside className="sidebar-left">
-          <AssetPanel />
-        </aside>
-
-        {/* Center Area */}
-        <main className="center-area">
-          <div className="center-top">
-            <CanvasPreview />
-          </div>
-          <div className="center-bottom">
-            <TimelinePanel />
-          </div>
-        </main>
-
-        {/* Right Sidebar */}
-        <aside className="sidebar-right">
-          <div className="right-top">
-            <DSLEditorPanel />
-          </div>
-          <div className="right-bottom">
-            <PropertiesPanel />
-          </div>
-        </aside>
-      </div>
-
-      {/* Status Bar */}
-      <div className="status-bar">
-        <span className="status-item">FPS: 60</span>
-        <span className="status-item">帧: 0 / 150</span>
-        <span className="status-item">分辨率: 1920 x 1080</span>
-        <span className="status-spacer" />
-        <span className="status-item">v0.1.0</span>
-      </div>
+    <div className="app-root">
+      <KeyboardShortcuts />
+      <Toolbar />
+      <EditorLayout />
+      <StatusBar />
     </div>
+  );
+}
+
+// ─── Main App with Provider ─────────────────────────────────
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <EditorProvider>
+        <AppInner />
+      </EditorProvider>
+    </ErrorBoundary>
   );
 }

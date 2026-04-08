@@ -1,821 +1,553 @@
-// ============================================================
-// panda-shot-engine — Complete Editor State Management
-// useEditorState.tsx — React Context + useReducer with Command Pattern Undo/Redo
-// Enhanced with Character, Scene, Action, Expression CRUD
-// ============================================================
+/**
+ * Editor State Management — useReducer + Context with Undo/Redo
+ * 
+ * Uses image-based CharacterAsset and SceneAsset types.
+ */
 
-import React, {
-  createContext,
-  useContext,
-  useReducer,
-  useCallback,
-  useMemo,
-  ReactNode,
-} from 'react';
-
-import { Shot as DslShot, DiagnosticMessage } from '../../core/dsl/types';
-import { parseShots } from '../../core/dsl/parser';
-import { serializeShots } from '../../core/dsl/serializer';
-import { Validator } from '../../core/dsl/validator';
+import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
+import { CharacterAsset, SceneAsset, DslShot, PandaProject, ExpressionSet } from '../../core/project/types';
 import { ActionDefinition } from '../../core/skeleton/types';
-import {
-  FULL_DEMO_DSL,
-  DEMO_CHARACTERS,
-  DEMO_SCENES,
-  DemoCharacter,
-  DemoScene,
-} from '../../demo/demo-project';
+import { createDemoProject } from '../../demo/demo-project';
 
-// ─── Selected Element ─────────────────────────────────────────
+// Re-export types for convenience
+export type { CharacterAsset, SceneAsset, DslShot, PandaProject, ExpressionSet };
 
-export type SelectedElementType = 'shot' | 'character' | 'timelineEvent' | 'camera';
+// ─── Selection ──────────────────────────────────────────────
 
 export interface SelectedElement {
-  type: SelectedElementType;
+  type: 'character' | 'scene' | 'bone' | 'keyframe' | 'action' | 'expression';
   shotIndex: number;
   id: string;
-  trackId?: string;
-}
-
-// ─── Panel Layout ───────────────────────────────────────────
-
-export interface PanelLayout {
-  leftWidth: number;
-  rightWidth: number;
-  timelineHeight: number;
-  leftSplitRatio: number;
-  rightSplitRatio: number;
-  collapsedPanels: Set<string>;
-}
-
-// ─── Project Model ──────────────────────────────────────────
-
-export interface PandaProject {
-  name: string;
-  shots: DslShot[];
-  characters: DemoCharacter[];
-  scenes: DemoScene[];
-  customActions: ActionDefinition[];
+  /** For expression selection: the parent character ID */
+  parentId?: string;
 }
 
 // ─── Editor State ───────────────────────────────────────────
 
 export interface EditorState {
-  project: PandaProject | null;
+  project: PandaProject;
   currentShotIndex: number;
-  currentTime: number;
-  isPlaying: boolean;
-  playbackSpeed: number;
-  zoom: number;
-  selectedElement: SelectedElement | null;
   dslText: string;
-  dslErrors: DiagnosticMessage[];
-  dslWarnings: DiagnosticMessage[];
-  undoStack: UndoEntry[];
-  redoStack: UndoEntry[];
-  panelLayout: PanelLayout;
-  viewMode: 'edit' | 'preview' | 'split';
-  timelineZoom: number;
+  selectedElement: SelectedElement | null;
+  isPlaying: boolean;
+  playbackTime: number;
+  zoom: number;
+  showGrid: boolean;
+  showBones: boolean;
+  /** Undo stack */
+  undoStack: PandaProject[];
+  /** Redo stack */
+  redoStack: PandaProject[];
 }
 
-// ─── Undo/Redo Command Pattern ──────────────────────────────
-
-export interface UndoEntry {
-  description: string;
-  snapshot: {
-    dslText: string;
-    currentShotIndex: number;
-    selectedElement: SelectedElement | null;
-  };
-}
-
-function captureSnapshot(state: EditorState): UndoEntry['snapshot'] {
-  return {
-    dslText: state.dslText,
-    currentShotIndex: state.currentShotIndex,
-    selectedElement: state.selectedElement,
-  };
-}
-
-// ─── Action Types ───────────────────────────────────────────
+// ─── Actions ────────────────────────────────────────────────
 
 export type EditorAction =
   // Project
-  | { type: 'SET_PROJECT'; project: PandaProject; dslText: string }
-  | { type: 'NEW_PROJECT' }
+  | { type: 'LOAD_PROJECT'; project: PandaProject }
   | { type: 'SET_PROJECT_NAME'; name: string }
-  // Shot navigation & CRUD
-  | { type: 'SET_CURRENT_SHOT'; index: number }
-  | { type: 'ADD_SHOT'; afterIndex: number }
-  | { type: 'REMOVE_SHOT'; index: number }
-  | { type: 'REORDER_SHOT'; fromIndex: number; toIndex: number }
-  | { type: 'DUPLICATE_SHOT'; index: number }
+  // Shot management
+  | { type: 'SELECT_SHOT'; index: number }
+  | { type: 'ADD_SHOT'; shot: DslShot }
+  | { type: 'UPDATE_SHOT'; shotId: string; updates: Partial<DslShot> }
+  | { type: 'REMOVE_SHOT'; shotId: string }
+  | { type: 'REORDER_SHOTS'; fromIndex: number; toIndex: number }
   // DSL
-  | { type: 'SET_DSL_TEXT'; text: string }
-  | { type: 'PARSE_DSL' }
-  // Playback
-  | { type: 'PLAY' }
-  | { type: 'PAUSE' }
-  | { type: 'SEEK'; time: number }
-  | { type: 'SET_SPEED'; speed: number }
+  | { type: 'UPDATE_DSL'; text: string }
   // Selection
   | { type: 'SELECT_ELEMENT'; element: SelectedElement }
   | { type: 'DESELECT' }
-  // Undo/Redo
-  | { type: 'UNDO' }
-  | { type: 'REDO' }
+  // Playback
+  | { type: 'TOGGLE_PLAY' }
+  | { type: 'SET_PLAYBACK_TIME'; time: number }
+  | { type: 'STOP' }
   // View
   | { type: 'SET_ZOOM'; zoom: number }
-  | { type: 'SET_TIMELINE_ZOOM'; zoom: number }
-  | { type: 'SET_VIEW_MODE'; mode: 'edit' | 'preview' | 'split' }
-  | { type: 'UPDATE_SHOT_PROPERTY'; shotIndex: number; key: string; value: unknown }
-  | { type: 'UPDATE_PANEL_LAYOUT'; layout: Partial<PanelLayout> }
-  | { type: 'TOGGLE_PANEL_COLLAPSE'; panelId: string }
-  // ──────────────────────────────────────────────────────────
-  // Character CRUD
-  // ──────────────────────────────────────────────────────────
-  | { type: 'ADD_CHARACTER'; character: DemoCharacter }
-  | { type: 'UPDATE_CHARACTER'; characterId: string; updates: Partial<Omit<DemoCharacter, 'id'>> }
-  | { type: 'REMOVE_CHARACTER'; characterId: string }
-  | { type: 'DUPLICATE_CHARACTER'; characterId: string }
-  | { type: 'REORDER_CHARACTER'; fromIndex: number; toIndex: number }
-  // ──────────────────────────────────────────────────────────
+  | { type: 'TOGGLE_GRID' }
+  | { type: 'TOGGLE_BONES' }
+  // Character CRUD (image-based)
+  | { type: 'ADD_CHARACTER'; character: CharacterAsset }
+  | { type: 'UPDATE_CHARACTER'; charId: string; updates: Partial<CharacterAsset> }
+  | { type: 'UPDATE_CHARACTER_PART'; charId: string; partKey: string; imageData: string }
+  | { type: 'REMOVE_CHARACTER_PART'; charId: string; partKey: string }
+  | { type: 'REMOVE_CHARACTER'; charId: string }
+  | { type: 'DUPLICATE_CHARACTER'; charId: string }
+  | { type: 'SET_CHARACTER_THUMBNAIL'; charId: string; imageData: string }
+  // Expression CRUD (image sticker based)
+  | { type: 'ADD_EXPRESSION'; charId: string; expression: ExpressionSet }
+  | { type: 'UPDATE_EXPRESSION'; charId: string; exprId: string; updates: Partial<ExpressionSet> }
+  | { type: 'UPDATE_EXPRESSION_SLOT'; charId: string; exprId: string; slot: 'eyesImage' | 'mouthImage' | 'eyebrowImage' | 'overlayImage'; imageData: string | null }
+  | { type: 'REMOVE_EXPRESSION'; charId: string; exprId: string }
+  | { type: 'DUPLICATE_EXPRESSION'; charId: string; exprId: string }
   // Scene CRUD
-  // ──────────────────────────────────────────────────────────
-  | { type: 'ADD_SCENE'; scene: DemoScene }
-  | { type: 'UPDATE_SCENE'; sceneId: string; updates: Partial<Omit<DemoScene, 'id'>> }
+  | { type: 'ADD_SCENE'; scene: SceneAsset }
+  | { type: 'UPDATE_SCENE'; sceneId: string; updates: Partial<SceneAsset> }
   | { type: 'REMOVE_SCENE'; sceneId: string }
   | { type: 'DUPLICATE_SCENE'; sceneId: string }
-  | { type: 'REORDER_SCENE'; fromIndex: number; toIndex: number }
-  // ──────────────────────────────────────────────────────────
-  // Custom Action CRUD
-  // ──────────────────────────────────────────────────────────
+  | { type: 'SET_SCENE_BACKGROUND'; sceneId: string; imageData: string | null }
+  // Action CRUD
   | { type: 'ADD_CUSTOM_ACTION'; action: ActionDefinition }
-  | { type: 'UPDATE_CUSTOM_ACTION'; actionId: string; updates: Partial<Omit<ActionDefinition, 'id'>> }
+  | { type: 'UPDATE_CUSTOM_ACTION'; actionId: string; updates: Partial<ActionDefinition> }
   | { type: 'REMOVE_CUSTOM_ACTION'; actionId: string }
   | { type: 'DUPLICATE_CUSTOM_ACTION'; actionId: string }
-  // ──────────────────────────────────────────────────────────
-  // Expression CRUD
-  // ──────────────────────────────────────────────────────────
-  | { type: 'ADD_CHARACTER_EXPRESSION'; characterId: string; expression: string }
-  | { type: 'REMOVE_CHARACTER_EXPRESSION'; characterId: string; expression: string }
-  | { type: 'SET_CHARACTER_EXPRESSIONS'; characterId: string; expressions: string[] };
+  // Undo/Redo
+  | { type: 'UNDO' }
+  | { type: 'REDO' };
 
-// ─── Helpers: parse DSL and extract shots ───────────────────
+// ─── Helpers ────────────────────────────────────────────────
 
-function tryParseDsl(text: string): {
-  shots: DslShot[];
-  errors: DiagnosticMessage[];
-  warnings: DiagnosticMessage[];
-} {
-  try {
-    const shots = parseShots(text);
-    const validator = new Validator();
-    const result = validator.validateAll(shots);
-    return {
-      shots,
-      errors: result.errors,
-      warnings: result.warnings,
-    };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const lineMatch = msg.match(/at (\d+):(\d+)/);
-    const line = lineMatch ? parseInt(lineMatch[1], 10) : 1;
-    const column = lineMatch ? parseInt(lineMatch[2], 10) : 1;
-    return {
-      shots: [],
-      errors: [{ line, column, message: msg, severity: 'error' }],
-      warnings: [],
-    };
-  }
+const MAX_UNDO = 50;
+
+function pushUndo(state: EditorState): { undoStack: PandaProject[]; redoStack: PandaProject[] } {
+  const stack = [...state.undoStack, JSON.parse(JSON.stringify(state.project))];
+  if (stack.length > MAX_UNDO) stack.shift();
+  return { undoStack: stack, redoStack: [] };
 }
 
-function rebuildProjectFromDsl(
-  state: EditorState,
-  dslText: string,
-): Partial<EditorState> {
-  const { shots, errors, warnings } = tryParseDsl(dslText);
-  const project: PandaProject = {
-    name: state.project?.name ?? 'Untitled Project',
-    shots,
-    characters: state.project?.characters ?? [...DEMO_CHARACTERS],
-    scenes: state.project?.scenes ?? [...DEMO_SCENES],
-    customActions: state.project?.customActions ?? [],
-  };
-  return {
-    project,
-    dslText,
-    dslErrors: errors,
-    dslWarnings: warnings,
-    currentShotIndex: Math.min(
-      state.currentShotIndex,
-      Math.max(0, shots.length - 1),
-    ),
-  };
+function updateCharacter(characters: CharacterAsset[], charId: string, fn: (c: CharacterAsset) => CharacterAsset): CharacterAsset[] {
+  return characters.map((c) => c.id === charId ? fn(c) : c);
 }
-
-// ─── Initial State ──────────────────────────────────────────
-
-function createInitialState(): EditorState {
-  const dslText = FULL_DEMO_DSL;
-  const { shots, errors, warnings } = tryParseDsl(dslText);
-
-  const project: PandaProject = {
-    name: 'Panda Shot Engine — 客栈相遇',
-    shots,
-    characters: [...DEMO_CHARACTERS],
-    scenes: [...DEMO_SCENES],
-    customActions: [],
-  };
-
-  return {
-    project,
-    currentShotIndex: 0,
-    currentTime: 0,
-    isPlaying: false,
-    playbackSpeed: 1,
-    zoom: 100,
-    selectedElement: null,
-    dslText,
-    dslErrors: errors,
-    dslWarnings: warnings,
-    undoStack: [],
-    redoStack: [],
-    panelLayout: {
-      leftWidth: 240,
-      rightWidth: 320,
-      timelineHeight: 220,
-      leftSplitRatio: 0.4,
-      rightSplitRatio: 0.6,
-      collapsedPanels: new Set<string>(),
-    },
-    viewMode: 'edit',
-    timelineZoom: 1,
-  };
-}
-
-const initialState = createInitialState();
 
 // ─── Reducer ────────────────────────────────────────────────
 
-function pushUndo(state: EditorState, description: string): EditorState {
-  const entry: UndoEntry = { description, snapshot: captureSnapshot(state) };
-  return {
-    ...state,
-    undoStack: [...state.undoStack.slice(-49), entry],
-    redoStack: [],
-  };
-}
-
 function editorReducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
-    // ─── Project ────────────────────────────────────────────
-    case 'SET_PROJECT': {
+    // ── Project ──
+    case 'LOAD_PROJECT':
       return {
         ...state,
         project: action.project,
-        dslText: action.dslText,
         currentShotIndex: 0,
-        currentTime: 0,
-        selectedElement: null,
-        ...rebuildProjectFromDsl(state, action.dslText),
+        dslText: action.project.shots[0]?.dsl ?? '',
+        undoStack: [],
+        redoStack: [],
       };
-    }
 
-    case 'NEW_PROJECT': {
-      const newDsl = `shot "新镜头_001":\n  duration: 5s\n  set: "inn_interior"\n\n  at 0s:\n    camera wide\n\n  transition: cut`;
-      const stateWithUndo = pushUndo(state, 'New Project');
-      return {
-        ...stateWithUndo,
-        ...rebuildProjectFromDsl(stateWithUndo, newDsl),
-        currentTime: 0,
-        selectedElement: null,
-      };
-    }
-
-    case 'SET_PROJECT_NAME': {
-      if (!state.project) return state;
+    case 'SET_PROJECT_NAME':
       return {
         ...state,
+        ...pushUndo(state),
         project: { ...state.project, name: action.name },
       };
-    }
 
-    // ─── Shot navigation ──────────────────────────────────────
-    case 'SET_CURRENT_SHOT': {
-      const maxIndex = (state.project?.shots.length ?? 1) - 1;
-      const index = Math.max(0, Math.min(action.index, maxIndex));
+    // ── Shot ──
+    case 'SELECT_SHOT': {
+      const shot = state.project.shots[action.index];
       return {
         ...state,
-        currentShotIndex: index,
-        currentTime: 0,
+        currentShotIndex: action.index,
+        dslText: shot?.dsl ?? '',
         selectedElement: null,
       };
     }
 
-    case 'ADD_SHOT': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, 'Add Shot');
-      const newShotNum = state.project.shots.length + 1;
-      const newShotDsl = `\n\nshot "新镜头_${String(newShotNum).padStart(3, '0')}":\n  duration: 5s\n  set: "inn_interior"\n\n  at 0s:\n    camera wide\n\n  transition: cut`;
-      const lines = stateU.dslText.split('\n');
-      let insertLineIndex = lines.length;
-      let shotCount = -1;
-      for (let i = 0; i < lines.length; i++) {
-        if (/^shot\s+"/.test(lines[i].trim())) {
-          shotCount++;
-          if (shotCount > action.afterIndex) {
-            insertLineIndex = i;
-            break;
-          }
-        }
-      }
-      const newDslText =
-        insertLineIndex >= lines.length
-          ? stateU.dslText + newShotDsl
-          : [
-              ...lines.slice(0, insertLineIndex),
-              newShotDsl,
-              '',
-              ...lines.slice(insertLineIndex),
-            ].join('\n');
+    case 'ADD_SHOT':
       return {
-        ...stateU,
-        ...rebuildProjectFromDsl(stateU, newDslText),
-        currentShotIndex: action.afterIndex + 1,
-        currentTime: 0,
+        ...state,
+        ...pushUndo(state),
+        project: { ...state.project, shots: [...state.project.shots, action.shot] },
+      };
+
+    case 'UPDATE_SHOT': {
+      const shots = state.project.shots.map((s) =>
+        s.id === action.shotId ? { ...s, ...action.updates } : s,
+      );
+      const idx = shots.findIndex((s) => s.id === action.shotId);
+      const newDsl = idx === state.currentShotIndex && action.updates.dsl !== undefined
+        ? action.updates.dsl
+        : state.dslText;
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: { ...state.project, shots },
+        dslText: newDsl,
       };
     }
 
     case 'REMOVE_SHOT': {
-      if (!state.project || state.project.shots.length <= 1) return state;
-      const stateU = pushUndo(state, 'Remove Shot');
-      const shots = [...state.project.shots];
-      shots.splice(action.index, 1);
-      const newDslText = serializeShots(shots);
+      const shots = state.project.shots.filter((s) => s.id !== action.shotId);
+      const newIdx = Math.min(state.currentShotIndex, shots.length - 1);
       return {
-        ...stateU,
-        ...rebuildProjectFromDsl(stateU, newDslText),
-        currentShotIndex: Math.min(
-          stateU.currentShotIndex,
-          Math.max(0, shots.length - 1),
-        ),
-        currentTime: 0,
+        ...state,
+        ...pushUndo(state),
+        project: { ...state.project, shots },
+        currentShotIndex: Math.max(0, newIdx),
+        dslText: shots[Math.max(0, newIdx)]?.dsl ?? '',
       };
     }
 
-    case 'REORDER_SHOT': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, 'Reorder Shot');
+    case 'REORDER_SHOTS': {
       const shots = [...state.project.shots];
       const [moved] = shots.splice(action.fromIndex, 1);
       shots.splice(action.toIndex, 0, moved);
-      const newDslText = serializeShots(shots);
-      return {
-        ...stateU,
-        ...rebuildProjectFromDsl(stateU, newDslText),
-        currentShotIndex: action.toIndex,
-      };
-    }
-
-    case 'DUPLICATE_SHOT': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, 'Duplicate Shot');
-      const shots = [...state.project.shots];
-      const orig = shots[action.index];
-      if (!orig) return state;
-      const dup: DslShot = {
-        ...JSON.parse(JSON.stringify(orig)),
-        id: orig.id + '_copy',
-      };
-      shots.splice(action.index + 1, 0, dup);
-      const newDslText = serializeShots(shots);
-      return {
-        ...stateU,
-        ...rebuildProjectFromDsl(stateU, newDslText),
-        currentShotIndex: action.index + 1,
-      };
-    }
-
-    // ─── DSL text ───────────────────────────────────────────
-    case 'SET_DSL_TEXT': {
       return {
         ...state,
+        ...pushUndo(state),
+        project: { ...state.project, shots },
+      };
+    }
+
+    // ── DSL ──
+    case 'UPDATE_DSL': {
+      const shots = state.project.shots.map((s, i) =>
+        i === state.currentShotIndex ? { ...s, dsl: action.text } : s,
+      );
+      return {
+        ...state,
+        project: { ...state.project, shots },
         dslText: action.text,
       };
     }
 
-    case 'PARSE_DSL': {
-      const stateU = pushUndo(state, 'Edit DSL');
-      return {
-        ...stateU,
-        ...rebuildProjectFromDsl(stateU, stateU.dslText),
-      };
-    }
-
-    // ─── Playback ───────────────────────────────────────────
-    case 'PLAY': {
-      const maxTime = state.project?.shots[state.currentShotIndex]?.duration ?? 0;
-      return {
-        ...state,
-        isPlaying: true,
-        currentTime: state.currentTime >= maxTime ? 0 : state.currentTime,
-      };
-    }
-
-    case 'PAUSE':
-      return { ...state, isPlaying: false };
-
-    case 'SEEK': {
-      const maxTime = state.project?.shots[state.currentShotIndex]?.duration ?? 0;
-      return {
-        ...state,
-        currentTime: Math.max(0, Math.min(action.time, maxTime)),
-      };
-    }
-
-    case 'SET_SPEED':
-      return { ...state, playbackSpeed: action.speed };
-
-    // ─── Selection ──────────────────────────────────────────
+    // ── Selection ──
     case 'SELECT_ELEMENT':
       return { ...state, selectedElement: action.element };
-
     case 'DESELECT':
       return { ...state, selectedElement: null };
 
-    // ─── Undo/Redo ──────────────────────────────────────────
-    case 'UNDO': {
-      if (state.undoStack.length === 0) return state;
-      const redoEntry: UndoEntry = {
-        description: 'Redo',
-        snapshot: captureSnapshot(state),
-      };
-      const undoEntry = state.undoStack[state.undoStack.length - 1];
-      const newUndoStack = state.undoStack.slice(0, -1);
-      const restored = undoEntry.snapshot;
-      const rebuilt = rebuildProjectFromDsl(state, restored.dslText);
+    // ── Playback ──
+    case 'TOGGLE_PLAY':
+      return { ...state, isPlaying: !state.isPlaying };
+    case 'SET_PLAYBACK_TIME':
+      return { ...state, playbackTime: action.time };
+    case 'STOP':
+      return { ...state, isPlaying: false, playbackTime: 0 };
+
+    // ── View ──
+    case 'SET_ZOOM':
+      return { ...state, zoom: Math.max(0.1, Math.min(4, action.zoom)) };
+    case 'TOGGLE_GRID':
+      return { ...state, showGrid: !state.showGrid };
+    case 'TOGGLE_BONES':
+      return { ...state, showBones: !state.showBones };
+
+    // ── Character CRUD ──
+    case 'ADD_CHARACTER':
       return {
         ...state,
-        ...rebuilt,
-        currentShotIndex: restored.currentShotIndex,
-        selectedElement: restored.selectedElement,
-        undoStack: newUndoStack,
-        redoStack: [...state.redoStack, redoEntry],
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: [...state.project.characters, action.character],
+        },
+      };
+
+    case 'UPDATE_CHARACTER':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => ({
+            ...c,
+            ...action.updates,
+          })),
+        },
+      };
+
+    case 'UPDATE_CHARACTER_PART':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => ({
+            ...c,
+            parts: { ...c.parts, [action.partKey]: action.imageData },
+          })),
+        },
+      };
+
+    case 'REMOVE_CHARACTER_PART':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => {
+            const parts = { ...c.parts };
+            delete parts[action.partKey];
+            return { ...c, parts };
+          }),
+        },
+      };
+
+    case 'REMOVE_CHARACTER':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: state.project.characters.filter((c) => c.id !== action.charId),
+        },
+      };
+
+    case 'DUPLICATE_CHARACTER': {
+      const orig = state.project.characters.find((c) => c.id === action.charId);
+      if (!orig) return state;
+      let copyName = orig.name + ' (Copy)';
+      let counter = 2;
+      while (state.project.characters.some((c) => c.name === copyName)) {
+        copyName = `${orig.name} (Copy ${counter++})`;
+      }
+      const dup: CharacterAsset = {
+        ...JSON.parse(JSON.stringify(orig)),
+        id: orig.id + '_copy_' + Date.now().toString(36),
+        name: copyName,
+      };
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: [...state.project.characters, dup],
+        },
+      };
+    }
+
+    case 'SET_CHARACTER_THUMBNAIL':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => ({
+            ...c,
+            thumbnail: action.imageData,
+          })),
+        },
+      };
+
+    // ── Expression CRUD ──
+    case 'ADD_EXPRESSION': {
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => ({
+            ...c,
+            expressions: { ...c.expressions, [action.expression.id]: action.expression },
+          })),
+        },
+      };
+    }
+
+    case 'UPDATE_EXPRESSION':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => ({
+            ...c,
+            expressions: {
+              ...c.expressions,
+              [action.exprId]: { ...c.expressions[action.exprId], ...action.updates },
+            },
+          })),
+        },
+      };
+
+    case 'UPDATE_EXPRESSION_SLOT':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => {
+            const expr = c.expressions[action.exprId];
+            if (!expr) return c;
+            const updatedExpr = { ...expr };
+            if (action.imageData === null) {
+              delete (updatedExpr as any)[action.slot];
+            } else {
+              (updatedExpr as any)[action.slot] = action.imageData;
+            }
+            return { ...c, expressions: { ...c.expressions, [action.exprId]: updatedExpr } };
+          }),
+        },
+      };
+
+    case 'REMOVE_EXPRESSION':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => {
+            const exprs = { ...c.expressions };
+            delete exprs[action.exprId];
+            return { ...c, expressions: exprs };
+          }),
+        },
+      };
+
+    case 'DUPLICATE_EXPRESSION': {
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          characters: updateCharacter(state.project.characters, action.charId, (c) => {
+            const orig = c.expressions[action.exprId];
+            if (!orig) return c;
+            let copyName = orig.name + ' (Copy)';
+            let counter = 2;
+            const existing = Object.values(c.expressions);
+            while (existing.some((e) => e.name === copyName)) {
+              copyName = `${orig.name} (Copy ${counter++})`;
+            }
+            const newId = orig.id + '_copy_' + Date.now().toString(36);
+            const dup: ExpressionSet = { ...JSON.parse(JSON.stringify(orig)), id: newId, name: copyName };
+            return { ...c, expressions: { ...c.expressions, [newId]: dup } };
+          }),
+        },
+      };
+    }
+
+    // ── Scene CRUD ──
+    case 'ADD_SCENE':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          scenes: [...state.project.scenes, action.scene],
+        },
+      };
+
+    case 'UPDATE_SCENE':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          scenes: state.project.scenes.map((s) =>
+            s.id === action.sceneId ? { ...s, ...action.updates } : s,
+          ),
+        },
+      };
+
+    case 'REMOVE_SCENE':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          scenes: state.project.scenes.filter((s) => s.id !== action.sceneId),
+        },
+      };
+
+    case 'DUPLICATE_SCENE': {
+      const orig = state.project.scenes.find((s) => s.id === action.sceneId);
+      if (!orig) return state;
+      let copyName = orig.name + ' (Copy)';
+      let counter = 2;
+      while (state.project.scenes.some((s) => s.name === copyName)) {
+        copyName = `${orig.name} (Copy ${counter++})`;
+      }
+      const dup: SceneAsset = {
+        ...JSON.parse(JSON.stringify(orig)),
+        id: orig.id + '_copy_' + Date.now().toString(36),
+        name: copyName,
+      };
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: { ...state.project, scenes: [...state.project.scenes, dup] },
+      };
+    }
+
+    case 'SET_SCENE_BACKGROUND':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          scenes: state.project.scenes.map((s) =>
+            s.id === action.sceneId
+              ? { ...s, backgroundImage: action.imageData ?? undefined }
+              : s,
+          ),
+        },
+      };
+
+    // ── Custom Action CRUD ──
+    case 'ADD_CUSTOM_ACTION':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          customActions: [...state.project.customActions, action.action],
+        },
+      };
+
+    case 'UPDATE_CUSTOM_ACTION':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          customActions: state.project.customActions.map((a) =>
+            a.id === action.actionId ? { ...a, ...action.updates } : a,
+          ),
+        },
+      };
+
+    case 'REMOVE_CUSTOM_ACTION':
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: {
+          ...state.project,
+          customActions: state.project.customActions.filter((a) => a.id !== action.actionId),
+        },
+      };
+
+    case 'DUPLICATE_CUSTOM_ACTION': {
+      const orig = state.project.customActions.find((a) => a.id === action.actionId);
+      if (!orig) return state;
+      let copyName = orig.name + ' (Copy)';
+      let counter = 2;
+      while (state.project.customActions.some((a) => a.name === copyName)) {
+        copyName = `${orig.name} (Copy ${counter++})`;
+      }
+      const dup: ActionDefinition = {
+        ...JSON.parse(JSON.stringify(orig)),
+        id: 'custom_copy_' + Date.now().toString(36),
+        name: copyName,
+      };
+      return {
+        ...state,
+        ...pushUndo(state),
+        project: { ...state.project, customActions: [...state.project.customActions, dup] },
+      };
+    }
+
+    // ── Undo/Redo ──
+    case 'UNDO': {
+      if (state.undoStack.length === 0) return state;
+      const prev = state.undoStack[state.undoStack.length - 1];
+      return {
+        ...state,
+        project: prev,
+        undoStack: state.undoStack.slice(0, -1),
+        redoStack: [...state.redoStack, JSON.parse(JSON.stringify(state.project))],
+        dslText: prev.shots[state.currentShotIndex]?.dsl ?? '',
       };
     }
 
     case 'REDO': {
       if (state.redoStack.length === 0) return state;
-      const undoEntry: UndoEntry = {
-        description: 'Undo',
-        snapshot: captureSnapshot(state),
-      };
-      const redoEntry = state.redoStack[state.redoStack.length - 1];
-      const newRedoStack = state.redoStack.slice(0, -1);
-      const restored = redoEntry.snapshot;
-      const rebuilt = rebuildProjectFromDsl(state, restored.dslText);
+      const next = state.redoStack[state.redoStack.length - 1];
       return {
         ...state,
-        ...rebuilt,
-        currentShotIndex: restored.currentShotIndex,
-        selectedElement: restored.selectedElement,
-        undoStack: [...state.undoStack, undoEntry],
-        redoStack: newRedoStack,
-      };
-    }
-
-    // ─── Zoom & View ──────────────────────────────────────────
-    case 'SET_ZOOM':
-      return { ...state, zoom: Math.max(25, Math.min(200, action.zoom)) };
-
-    case 'SET_TIMELINE_ZOOM':
-      return {
-        ...state,
-        timelineZoom: Math.max(0.25, Math.min(4, action.zoom)),
-      };
-
-    case 'SET_VIEW_MODE':
-      return { ...state, viewMode: action.mode };
-
-    // ─── Shot property update ─────────────────────────────────
-    case 'UPDATE_SHOT_PROPERTY': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Update ${action.key}`);
-      const shots = [...state.project.shots];
-      const shot = { ...shots[action.shotIndex] };
-      (shot as Record<string, unknown>)[action.key] = action.value;
-      shots[action.shotIndex] = shot;
-      const newDslText = serializeShots(shots);
-      return {
-        ...stateU,
-        project: { ...stateU.project!, shots },
-        dslText: newDslText,
-        ...(() => {
-          const { errors, warnings } = tryParseDsl(newDslText);
-          return { dslErrors: errors, dslWarnings: warnings };
-        })(),
-      };
-    }
-
-    // ─── Panel Layout ─────────────────────────────────────────
-    case 'UPDATE_PANEL_LAYOUT':
-      return {
-        ...state,
-        panelLayout: { ...state.panelLayout, ...action.layout },
-      };
-
-    case 'TOGGLE_PANEL_COLLAPSE': {
-      const collapsed = new Set(state.panelLayout.collapsedPanels);
-      if (collapsed.has(action.panelId)) {
-        collapsed.delete(action.panelId);
-      } else {
-        collapsed.add(action.panelId);
-      }
-      return {
-        ...state,
-        panelLayout: { ...state.panelLayout, collapsedPanels: collapsed },
-      };
-    }
-
-    // ═════════════════════════════════════════════════════════════
-    // CHARACTER CRUD
-    // ═════════════════════════════════════════════════════════════
-
-    case 'ADD_CHARACTER': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Add Character: ${action.character.name}`);
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          characters: [...stateU.project!.characters, action.character],
-        },
-      };
-    }
-
-    case 'UPDATE_CHARACTER': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Update Character: ${action.characterId}`);
-      const characters = stateU.project!.characters.map((c) =>
-        c.id === action.characterId ? { ...c, ...action.updates } : c,
-      );
-      return {
-        ...stateU,
-        project: { ...stateU.project!, characters },
-      };
-    }
-
-    case 'REMOVE_CHARACTER': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Remove Character: ${action.characterId}`);
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          characters: stateU.project!.characters.filter((c) => c.id !== action.characterId),
-        },
-      };
-    }
-
-    case 'DUPLICATE_CHARACTER': {
-      if (!state.project) return state;
-      const original = state.project.characters.find((c) => c.id === action.characterId);
-      if (!original) return state;
-      const stateU = pushUndo(state, `Duplicate Character: ${original.name}`);
-      let copyName = original.name + ' (副本)';
-      let counter = 2;
-      while (stateU.project!.characters.some((c) => c.name === copyName)) {
-        copyName = `${original.name} (副本${counter})`;
-        counter++;
-      }
-      const newChar: DemoCharacter = {
-        ...original,
-        id: original.id + '_' + Date.now().toString(36),
-        name: copyName,
-      };
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          characters: [...stateU.project!.characters, newChar],
-        },
-      };
-    }
-
-    case 'REORDER_CHARACTER': {
-      if (!state.project) return state;
-      const chars = [...state.project.characters];
-      const [moved] = chars.splice(action.fromIndex, 1);
-      chars.splice(action.toIndex, 0, moved);
-      return {
-        ...state,
-        project: { ...state.project, characters: chars },
-      };
-    }
-
-    // ═════════════════════════════════════════════════════════════
-    // SCENE CRUD
-    // ═════════════════════════════════════════════════════════════
-
-    case 'ADD_SCENE': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Add Scene: ${action.scene.name}`);
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          scenes: [...stateU.project!.scenes, action.scene],
-        },
-      };
-    }
-
-    case 'UPDATE_SCENE': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Update Scene: ${action.sceneId}`);
-      const scenes = stateU.project!.scenes.map((s) =>
-        s.id === action.sceneId ? { ...s, ...action.updates } : s,
-      );
-      return {
-        ...stateU,
-        project: { ...stateU.project!, scenes },
-      };
-    }
-
-    case 'REMOVE_SCENE': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Remove Scene: ${action.sceneId}`);
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          scenes: stateU.project!.scenes.filter((s) => s.id !== action.sceneId),
-        },
-      };
-    }
-
-    case 'DUPLICATE_SCENE': {
-      if (!state.project) return state;
-      const original = state.project.scenes.find((s) => s.id === action.sceneId);
-      if (!original) return state;
-      const stateU = pushUndo(state, `Duplicate Scene: ${original.name}`);
-      let copyName = original.name + ' (副本)';
-      let counter = 2;
-      while (stateU.project!.scenes.some((s) => s.name === copyName)) {
-        copyName = `${original.name} (副本${counter})`;
-        counter++;
-      }
-      const newScene: DemoScene = {
-        ...original,
-        id: original.id + '_' + Date.now().toString(36),
-        name: copyName,
-      };
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          scenes: [...stateU.project!.scenes, newScene],
-        },
-      };
-    }
-
-    case 'REORDER_SCENE': {
-      if (!state.project) return state;
-      const scenes = [...state.project.scenes];
-      const [moved] = scenes.splice(action.fromIndex, 1);
-      scenes.splice(action.toIndex, 0, moved);
-      return {
-        ...state,
-        project: { ...state.project, scenes },
-      };
-    }
-
-    // ═════════════════════════════════════════════════════════════
-    // CUSTOM ACTION CRUD
-    // ═════════════════════════════════════════════════════════════
-
-    case 'ADD_CUSTOM_ACTION': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Add Action: ${action.action.name}`);
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          customActions: [...stateU.project!.customActions, action.action],
-        },
-      };
-    }
-
-    case 'UPDATE_CUSTOM_ACTION': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Update Action: ${action.actionId}`);
-      const customActions = stateU.project!.customActions.map((a) =>
-        a.id === action.actionId ? { ...a, ...action.updates } : a,
-      );
-      return {
-        ...stateU,
-        project: { ...stateU.project!, customActions },
-      };
-    }
-
-    case 'REMOVE_CUSTOM_ACTION': {
-      if (!state.project) return state;
-      const stateU = pushUndo(state, `Remove Action: ${action.actionId}`);
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          customActions: stateU.project!.customActions.filter((a) => a.id !== action.actionId),
-        },
-      };
-    }
-
-    case 'DUPLICATE_CUSTOM_ACTION': {
-      if (!state.project) return state;
-      // Find in both built-in and custom
-      const allActions = [
-        ...state.project.customActions,
-      ];
-      const original = allActions.find((a) => a.id === action.actionId);
-      if (!original) return state;
-      const stateU = pushUndo(state, `Duplicate Action: ${original.name}`);
-      let copyName = original.name + ' (副本)';
-      let counter = 2;
-      while (stateU.project!.customActions.some((a) => a.name === copyName)) {
-        copyName = `${original.name} (副本${counter})`;
-        counter++;
-      }
-      const newAction: ActionDefinition = {
-        ...JSON.parse(JSON.stringify(original)),
-        id: 'custom_' + Date.now().toString(36) + '_copy',
-        name: copyName,
-      };
-      return {
-        ...stateU,
-        project: {
-          ...stateU.project!,
-          customActions: [...stateU.project!.customActions, newAction],
-        },
-      };
-    }
-
-    // ═════════════════════════════════════════════════════════════
-    // EXPRESSION CRUD
-    // ═════════════════════════════════════════════════════════════
-
-    case 'ADD_CHARACTER_EXPRESSION': {
-      if (!state.project) return state;
-      const charIdx = state.project.characters.findIndex((c) => c.id === action.characterId);
-      if (charIdx === -1) return state;
-      const char = state.project.characters[charIdx];
-      if (char.expressions.includes(action.expression)) return state;
-
-      const stateU = pushUndo(state, `Add Expression: ${action.expression} to ${char.name}`);
-      const characters = [...stateU.project!.characters];
-      characters[charIdx] = {
-        ...characters[charIdx],
-        expressions: [...characters[charIdx].expressions, action.expression],
-      };
-      return {
-        ...stateU,
-        project: { ...stateU.project!, characters },
-      };
-    }
-
-    case 'REMOVE_CHARACTER_EXPRESSION': {
-      if (!state.project) return state;
-      const charIdx = state.project.characters.findIndex((c) => c.id === action.characterId);
-      if (charIdx === -1) return state;
-      const char = state.project.characters[charIdx];
-      if (char.expressions.length <= 1) return state;
-
-      const stateU = pushUndo(state, `Remove Expression: ${action.expression} from ${char.name}`);
-      const characters = [...stateU.project!.characters];
-      characters[charIdx] = {
-        ...characters[charIdx],
-        expressions: characters[charIdx].expressions.filter((e) => e !== action.expression),
-      };
-      return {
-        ...stateU,
-        project: { ...stateU.project!, characters },
-      };
-    }
-
-    case 'SET_CHARACTER_EXPRESSIONS': {
-      if (!state.project) return state;
-      const charIdx = state.project.characters.findIndex((c) => c.id === action.characterId);
-      if (charIdx === -1) return state;
-      if (action.expressions.length === 0) return state;
-
-      const stateU = pushUndo(state, `Set Expressions for ${state.project.characters[charIdx].name}`);
-      const characters = [...stateU.project!.characters];
-      characters[charIdx] = {
-        ...characters[charIdx],
-        expressions: [...new Set(action.expressions)],
-      };
-      return {
-        ...stateU,
-        project: { ...stateU.project!, characters },
+        project: next,
+        redoStack: state.redoStack.slice(0, -1),
+        undoStack: [...state.undoStack, JSON.parse(JSON.stringify(state.project))],
+        dslText: next.shots[state.currentShotIndex]?.dsl ?? '',
       };
     }
 
@@ -824,51 +556,41 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
   }
 }
 
+// ─── Initial State ──────────────────────────────────────────
+
+const demoProject = createDemoProject();
+
+const initialState: EditorState = {
+  project: demoProject,
+  currentShotIndex: 0,
+  dslText: demoProject.shots[0]?.dsl ?? '',
+  selectedElement: null,
+  isPlaying: false,
+  playbackTime: 0,
+  zoom: 1,
+  showGrid: true,
+  showBones: true,
+  undoStack: [],
+  redoStack: [],
+};
+
 // ─── Context ────────────────────────────────────────────────
 
 interface EditorContextValue {
   state: EditorState;
   dispatch: React.Dispatch<EditorAction>;
-  currentShot: DslShot | null;
-  totalDuration: number;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
 
-export function EditorProvider({ children }: { children: ReactNode }) {
+export function EditorProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(editorReducer, initialState);
-
-  const currentShot = useMemo(
-    () => state.project?.shots[state.currentShotIndex] ?? null,
-    [state.project, state.currentShotIndex],
-  );
-
-  const totalDuration = useMemo(() => {
-    if (!state.project) return 0;
-    return state.project.shots.reduce((sum, s) => sum + s.duration, 0);
-  }, [state.project]);
-
-  const value = useMemo(
-    () => ({ state, dispatch, currentShot, totalDuration }),
-    [state, dispatch, currentShot, totalDuration],
-  );
-
-  return (
-    <EditorContext.Provider value={value}>
-      {children}
-    </EditorContext.Provider>
-  );
+  const value = useMemo(() => ({ state, dispatch }), [state]);
+  return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;
 }
 
 export function useEditor(): EditorContextValue {
   const ctx = useContext(EditorContext);
-  if (!ctx) {
-    throw new Error('useEditor must be used within an EditorProvider');
-  }
+  if (!ctx) throw new Error('useEditor must be used within EditorProvider');
   return ctx;
 }
-
-// ─── Re-exports for convenience ─────────────────────────────
-
-export { DEMO_CHARACTERS, DEMO_SCENES } from '../../demo/demo-project';
-export type { DemoCharacter, DemoScene } from '../../demo/demo-project';

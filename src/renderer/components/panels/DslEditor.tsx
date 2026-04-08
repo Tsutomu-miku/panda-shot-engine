@@ -9,6 +9,8 @@ import { useEditor } from '../../hooks/useEditorState';
 import { KEYWORDS as DSL_KEYWORDS } from '../../../core/dsl/types';
 import type { DiagnosticMessage } from '../../../core/dsl/types';
 
+import './DslEditor.css';
+
 // ─── Known character names for highlighting ─────────────────
 
 const CHARACTER_NAMES = new Set([

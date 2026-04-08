@@ -13,7 +13,9 @@ import React, {
 } from 'react';
 import { useEditor, DEMO_SCENES } from '../../hooks/useEditorState';
 import { Shot, CameraCommand } from '../../../core/dsl/types';
-import { getScenePreset, SCENE_RENDER_PRESETS } from '../../../demo/demo-project';
+import { getScenePreset } from '../../../demo/demo-project';
+
+import './ShotList.css';
 
 // ─── Mini Thumbnail Renderer ────────────────────────────────
 
@@ -41,9 +43,11 @@ function ShotThumbnail({
 
     // Draw scene background
     const preset = getScenePreset(shot.set);
+    const bgGradientStart = preset.bgGradientStart || '#3e2723';
+    const bgGradientEnd = preset.bgGradientEnd || '#1a0e0a';
     const grad = ctx.createLinearGradient(0, 0, 0, height);
-    grad.addColorStop(0, preset.gradientStart);
-    grad.addColorStop(1, preset.gradientEnd);
+    grad.addColorStop(0, bgGradientStart);
+    grad.addColorStop(1, bgGradientEnd);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
 

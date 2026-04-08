@@ -37,6 +37,8 @@ import {
 } from '../../../core/dsl/types';
 import { serializeShots } from '../../../core/dsl/serializer';
 
+import './PropertiesPanel.css';
+
 // ─── Reusable Field Components ──────────────────────────────
 
 interface FieldRowProps {

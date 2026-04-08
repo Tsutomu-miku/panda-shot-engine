@@ -8,6 +8,8 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../../hooks/useEditorState';
 import { serializeShots } from '../../../core/dsl/serializer';
 
+import './Toolbar.css';
+
 // ─── Tool Button ────────────────────────────────────────────
 
 interface ToolButtonProps {

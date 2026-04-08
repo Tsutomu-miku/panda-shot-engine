@@ -7,7 +7,9 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useEditor, DEMO_CHARACTERS, DEMO_SCENES } from '../../hooks/useEditorState';
-import type { DemoCharacter, DemoScene } from '../../demo/demo-project';
+import type { DemoCharacter, DemoScene } from '../../../demo/demo-project';
+
+import './AssetPanel.css';
 
 // ─── Mini panda head canvas thumbnail ───────────────────────
 

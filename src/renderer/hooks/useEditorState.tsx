@@ -374,8 +374,14 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
     }
 
     // ─── Playback ─────────────────────────────────────────
-    case 'PLAY':
-      return { ...state, isPlaying: true };
+    case 'PLAY': {
+      const maxTime = state.project?.shots[state.currentShotIndex]?.duration ?? 0;
+      return {
+        ...state,
+        isPlaying: true,
+        currentTime: state.currentTime >= maxTime ? 0 : state.currentTime,
+      };
+    }
 
     case 'PAUSE':
       return { ...state, isPlaying: false };

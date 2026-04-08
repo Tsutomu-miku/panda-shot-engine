@@ -8,6 +8,8 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useEditor } from '../../hooks/useEditorState';
 import type { Shot, TimelineEvent, Command } from '../../../core/dsl/types';
 
+import './TimelinePanel.css';
+
 // ─── Constants ──────────────────────────────────────────────
 
 const RULER_HEIGHT = 28;

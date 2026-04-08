@@ -21,6 +21,8 @@ import DslEditor from '../panels/DslEditor';
 import TimelinePanel from '../panels/TimelinePanel';
 import PropertiesPanel from '../panels/PropertiesPanel';
 
+import './EditorLayout.css';
+
 // ─── Resizable Divider ──────────────────────────────────────
 
 interface DividerProps {

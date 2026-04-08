@@ -6,8 +6,10 @@
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditor } from '../../hooks/useEditorState';
-import { getScenePreset, SceneRenderPreset } from '../../demo/demo-project';
+import { getScenePreset, SceneRenderPreset } from '../../../demo/demo-project';
 import type { Shot, PlaceCommand, TimelineEvent, Command, CameraCommand } from '../../../core/dsl/types';
+
+import './CanvasPreview.css';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -907,6 +909,11 @@ const CanvasPreview: React.FC = () => {
   const [draggingChar, setDraggingChar] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const rafRef = useRef<number | null>(null);
+  const playbackTimeRef = useRef(state.currentTime);
+
+  useEffect(() => {
+    playbackTimeRef.current = state.currentTime;
+  }, [state.currentTime]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -1024,19 +1031,22 @@ const CanvasPreview: React.FC = () => {
   useEffect(() => {
     if (!state.isPlaying || !currentShot) return;
     let lastTime = performance.now();
+    playbackTimeRef.current = state.currentTime;
 
     const tick = (now: number) => {
       const dt = (now - lastTime) / 1000 * state.playbackSpeed;
       lastTime = now;
-      const nextTime = state.currentTime + dt;
+      const nextTime = playbackTimeRef.current + dt;
 
       if (nextTime >= currentShot.duration) {
+        playbackTimeRef.current = currentShot.duration;
         dispatch({ type: 'PAUSE' });
         dispatch({ type: 'SEEK', time: currentShot.duration });
       } else {
+        playbackTimeRef.current = nextTime;
         dispatch({ type: 'SEEK', time: nextTime });
+        rafRef.current = requestAnimationFrame(tick);
       }
-      rafRef.current = requestAnimationFrame(tick);
     };
 
     rafRef.current = requestAnimationFrame(tick);

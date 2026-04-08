@@ -12,8 +12,7 @@ import { FULL_DEMO_DSL, DEMO_CHARACTERS, DEMO_SCENES } from '../demo/demo-projec
 import { parseShots } from '../core/dsl/parser';
 import { serializeShots } from '../core/dsl/serializer';
 
-import './styles/global.css';
-import './styles/components.css';
+import './App.css';
 
 // ─── Error Boundary ─────────────────────────────────────────
 

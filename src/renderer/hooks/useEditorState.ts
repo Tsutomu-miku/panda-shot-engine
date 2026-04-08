@@ -1,375 +1,495 @@
+// ============================================================
+// panda-shot-engine — Complete Editor State Management
+// useEditorState.ts — React Context + useReducer with Command Pattern Undo/Redo
+// ============================================================
+
 import React, {
   createContext,
   useContext,
   useReducer,
   useCallback,
+  useMemo,
   ReactNode,
 } from 'react';
 
-/* ================================================================
-   Types
-   ================================================================ */
+import { Shot as DslShot, DiagnosticMessage } from '../../core/dsl/types';
+import { parseShots } from '../../core/dsl/parser';
+import { serializeShots } from '../../core/dsl/serializer';
+import { Validator } from '../../core/dsl/validator';
+import {
+  FULL_DEMO_DSL,
+  DEMO_CHARACTERS,
+  DEMO_SCENES,
+  DemoCharacter,
+  DemoScene,
+} from '../../demo/demo-project';
 
-export interface Character {
+// ─── Selected Element ───────────────────────────────────────
+
+export type SelectedElementType = 'shot' | 'character' | 'timelineEvent' | 'camera';
+
+export interface SelectedElement {
+  type: SelectedElementType;
+  shotIndex: number;
   id: string;
-  name: string;
-  color: string;
-  position?: { x: number; y: number };
-  scale?: number;
-  facing?: 'left' | 'right';
-  expression?: string;
-  action?: string;
+  trackId?: string;
 }
 
-export interface Scene {
-  id: string;
-  name: string;
-  color: string;
+// ─── Panel Layout ───────────────────────────────────────────
+
+export interface PanelLayout {
+  leftWidth: number;
+  rightWidth: number;
+  timelineHeight: number;
+  leftSplitRatio: number;
+  rightSplitRatio: number;
+  collapsedPanels: Set<string>;
 }
 
-export interface Prop {
-  id: string;
-  name: string;
-  color: string;
-}
-
-export interface TimelineEvent {
-  id: string;
-  trackId: string;
-  type: 'action' | 'expression' | 'say' | 'camera' | 'sfx';
-  label: string;
-  startTime: number;
-  duration: number;
-}
-
-export interface Track {
-  id: string;
-  name: string;
-  color: string;
-  visible: boolean;
-  events: TimelineEvent[];
-}
-
-export interface Shot {
-  id: string;
-  duration: number;
-  scene: string;
-  transition: string;
-  characters: Character[];
-  tracks: Track[];
-}
-
-export interface Project {
-  name: string;
-  shots: Shot[];
-}
-
-export interface ValidationError {
-  line: number;
-  message: string;
-}
-
-export interface ValidationResult {
-  valid: boolean;
-  errors: ValidationError[];
-}
+// ─── Editor State ───────────────────────────────────────────
 
 export interface EditorState {
-  currentProject: Project | null;
+  project: PandaProject | null;
   currentShotIndex: number;
-  isPlaying: boolean;
   currentTime: number;
-  selectedCharacterId: string | null;
+  isPlaying: boolean;
+  playbackSpeed: number;
   zoom: number;
-  timelineZoom: number;
+  selectedElement: SelectedElement | null;
   dslText: string;
-  validationResult: ValidationResult | null;
+  dslErrors: DiagnosticMessage[];
+  dslWarnings: DiagnosticMessage[];
+  undoStack: UndoEntry[];
+  redoStack: UndoEntry[];
+  panelLayout: PanelLayout;
+  viewMode: 'edit' | 'preview' | 'split';
+  timelineZoom: number;
 }
 
-/* ================================================================
-   Actions
-   ================================================================ */
+// ─── Project Model ──────────────────────────────────────────
+
+export interface PandaProject {
+  name: string;
+  shots: DslShot[];
+  characters: DemoCharacter[];
+  scenes: DemoScene[];
+}
+
+// ─── Undo/Redo Command Pattern ──────────────────────────────
+
+export interface UndoEntry {
+  description: string;
+  snapshot: {
+    dslText: string;
+    currentShotIndex: number;
+    selectedElement: SelectedElement | null;
+  };
+}
+
+function captureSnapshot(state: EditorState): UndoEntry['snapshot'] {
+  return {
+    dslText: state.dslText,
+    currentShotIndex: state.currentShotIndex,
+    selectedElement: state.selectedElement,
+  };
+}
+
+// ─── Action Types ───────────────────────────────────────────
 
 export type EditorAction =
-  | { type: 'SET_PROJECT'; project: Project }
-  | { type: 'SET_SHOT'; index: number }
+  | { type: 'SET_PROJECT'; project: PandaProject; dslText: string }
+  | { type: 'NEW_PROJECT' }
+  | { type: 'SET_CURRENT_SHOT'; index: number }
+  | { type: 'ADD_SHOT'; afterIndex: number }
+  | { type: 'REMOVE_SHOT'; index: number }
+  | { type: 'REORDER_SHOT'; fromIndex: number; toIndex: number }
+  | { type: 'DUPLICATE_SHOT'; index: number }
+  | { type: 'SET_DSL_TEXT'; text: string }
+  | { type: 'PARSE_DSL' }
   | { type: 'PLAY' }
   | { type: 'PAUSE' }
-  | { type: 'STOP' }
   | { type: 'SEEK'; time: number }
-  | { type: 'SELECT_CHARACTER'; id: string | null }
-  | { type: 'UPDATE_DSL'; text: string }
+  | { type: 'SET_SPEED'; speed: number }
+  | { type: 'SELECT_ELEMENT'; element: SelectedElement }
+  | { type: 'DESELECT' }
+  | { type: 'UNDO' }
+  | { type: 'REDO' }
   | { type: 'SET_ZOOM'; zoom: number }
   | { type: 'SET_TIMELINE_ZOOM'; zoom: number }
-  | { type: 'SET_VALIDATION'; result: ValidationResult }
-  | { type: 'UPDATE_CHARACTER'; id: string; changes: Partial<Character> }
-  | { type: 'UPDATE_SHOT'; changes: Partial<Shot> }
-  | { type: 'TOGGLE_TRACK_VISIBILITY'; trackId: string }
-  | { type: 'SKIP_FORWARD' }
-  | { type: 'SKIP_BACKWARD' };
+  | { type: 'SET_VIEW_MODE'; mode: 'edit' | 'preview' | 'split' }
+  | { type: 'UPDATE_SHOT_PROPERTY'; shotIndex: number; key: string; value: unknown }
+  | { type: 'UPDATE_PANEL_LAYOUT'; layout: Partial<PanelLayout> }
+  | { type: 'TOGGLE_PANEL_COLLAPSE'; panelId: string }
+  | { type: 'SET_PROJECT_NAME'; name: string };
 
-/* ================================================================
-   Default DSL
-   ================================================================ */
+// ─── Helpers: parse DSL and extract shots ───────────────────
 
-export const DEFAULT_DSL = `shot "EP01_客栈相遇_001":
-  duration: 5s
-  set: "inn_interior_day"
-  
-  place panda_warrior at left-third facing right
-  place villain_boss at right-third facing left
-  
-  at 0s:
-    camera wide
-    panda_warrior expression neutral
-    villain_boss expression smirk
-  
-  at 1.5s:
-    camera close-up villain_boss
-    villain_boss say "你以为你能赢我？" voice "villain_deep"
-    villain_boss expression angry
-  
-  at 3.0s:
-    camera close-up panda_warrior
-    panda_warrior expression angry
-    panda_warrior say "今天就是你的末日！" voice "hero_firm"
-  
-  at 4.0s:
-    camera wide shake 0.3s
-    panda_warrior action sword_slash
-    sfx "sword_swing"
-  
-  transition: cut`;
+function tryParseDsl(text: string): {
+  shots: DslShot[];
+  errors: DiagnosticMessage[];
+  warnings: DiagnosticMessage[];
+} {
+  try {
+    const shots = parseShots(text);
+    const validator = new Validator();
+    const result = validator.validateAll(shots);
+    return {
+      shots,
+      errors: result.errors,
+      warnings: result.warnings,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const lineMatch = msg.match(/at (\d+):(\d+)/);
+    const line = lineMatch ? parseInt(lineMatch[1], 10) : 1;
+    const column = lineMatch ? parseInt(lineMatch[2], 10) : 1;
+    return {
+      shots: [],
+      errors: [{ line, column, message: msg, severity: 'error' }],
+      warnings: [],
+    };
+  }
+}
 
-/* ================================================================
-   Mock Data
-   ================================================================ */
+function rebuildProjectFromDsl(
+  state: EditorState,
+  dslText: string,
+): Partial<EditorState> {
+  const { shots, errors, warnings } = tryParseDsl(dslText);
+  const project: PandaProject = {
+    name: state.project?.name ?? 'Untitled Project',
+    shots,
+    characters: state.project?.characters ?? [...DEMO_CHARACTERS],
+    scenes: state.project?.scenes ?? [...DEMO_SCENES],
+  };
+  return {
+    project,
+    dslText,
+    dslErrors: errors,
+    dslWarnings: warnings,
+    currentShotIndex: Math.min(
+      state.currentShotIndex,
+      Math.max(0, shots.length - 1),
+    ),
+  };
+}
 
-export const MOCK_CHARACTERS: Character[] = [
-  {
-    id: 'panda_warrior',
-    name: '熊猫战士',
-    color: '#4caf50',
-    position: { x: 0.33, y: 0.6 },
-    scale: 1,
-    facing: 'right',
-    expression: 'neutral',
-    action: 'idle',
-  },
-  {
-    id: 'villain_boss',
-    name: '大反派',
-    color: '#f44336',
-    position: { x: 0.67, y: 0.6 },
-    scale: 1,
-    facing: 'left',
-    expression: 'smirk',
-    action: 'idle',
-  },
-  {
-    id: 'innkeeper',
-    name: '店小二',
-    color: '#ff9800',
-    position: { x: 0.5, y: 0.75 },
-    scale: 0.8,
-    facing: 'right',
-    expression: 'neutral',
-    action: 'idle',
-  },
-];
+// ─── Initial State ──────────────────────────────────────────
 
-export const MOCK_SCENES: Scene[] = [
-  { id: 'inn_interior_day', name: '客栈', color: '#795548' },
-  { id: 'palace_hall', name: '皇宫', color: '#fdd835' },
-  { id: 'street_day', name: '街道', color: '#8d6e63' },
-];
+function createInitialState(): EditorState {
+  const dslText = FULL_DEMO_DSL;
+  const { shots, errors, warnings } = tryParseDsl(dslText);
 
-export const MOCK_PROPS: Prop[] = [
-  { id: 'iron_sword', name: '铁剑', color: '#90a4ae' },
-  { id: 'wine_cup', name: '酒杯', color: '#ce93d8' },
-  { id: 'scroll', name: '卷轴', color: '#fff9c4' },
-];
+  const project: PandaProject = {
+    name: 'Panda Shot Engine — 客栈相遇',
+    shots,
+    characters: [...DEMO_CHARACTERS],
+    scenes: [...DEMO_SCENES],
+  };
 
-const MOCK_TRACKS: Track[] = [
-  {
-    id: 'track_panda_warrior',
-    name: '熊猫战士',
-    color: '#4caf50',
-    visible: true,
-    events: [
-      { id: 'e1', trackId: 'track_panda_warrior', type: 'expression', label: 'neutral', startTime: 0, duration: 3 },
-      { id: 'e2', trackId: 'track_panda_warrior', type: 'expression', label: 'angry', startTime: 3, duration: 2 },
-      { id: 'e3', trackId: 'track_panda_warrior', type: 'say', label: '"今天就是你的末日！"', startTime: 3, duration: 1 },
-      { id: 'e4', trackId: 'track_panda_warrior', type: 'action', label: 'sword_slash', startTime: 4, duration: 1 },
-    ],
-  },
-  {
-    id: 'track_villain_boss',
-    name: '大反派',
-    color: '#f44336',
-    visible: true,
-    events: [
-      { id: 'e5', trackId: 'track_villain_boss', type: 'expression', label: 'smirk', startTime: 0, duration: 1.5 },
-      { id: 'e6', trackId: 'track_villain_boss', type: 'say', label: '"你以为你能赢我？"', startTime: 1.5, duration: 1.5 },
-      { id: 'e7', trackId: 'track_villain_boss', type: 'expression', label: 'angry', startTime: 1.5, duration: 3.5 },
-    ],
-  },
-  {
-    id: 'track_camera',
-    name: '相机',
-    color: '#ab47bc',
-    visible: true,
-    events: [
-      { id: 'e8', trackId: 'track_camera', type: 'camera', label: 'wide', startTime: 0, duration: 1.5 },
-      { id: 'e9', trackId: 'track_camera', type: 'camera', label: 'close-up villain', startTime: 1.5, duration: 1.5 },
-      { id: 'e10', trackId: 'track_camera', type: 'camera', label: 'close-up panda', startTime: 3, duration: 1 },
-      { id: 'e11', trackId: 'track_camera', type: 'camera', label: 'wide shake', startTime: 4, duration: 1 },
-    ],
-  },
-  {
-    id: 'track_audio',
-    name: '音频',
-    color: '#42a5f5',
-    visible: true,
-    events: [
-      { id: 'e12', trackId: 'track_audio', type: 'sfx', label: 'sword_swing', startTime: 4, duration: 0.5 },
-    ],
-  },
-];
+  return {
+    project,
+    currentShotIndex: 0,
+    currentTime: 0,
+    isPlaying: false,
+    playbackSpeed: 1,
+    zoom: 100,
+    selectedElement: null,
+    dslText,
+    dslErrors: errors,
+    dslWarnings: warnings,
+    undoStack: [],
+    redoStack: [],
+    panelLayout: {
+      leftWidth: 240,
+      rightWidth: 320,
+      timelineHeight: 220,
+      leftSplitRatio: 0.4,
+      rightSplitRatio: 0.6,
+      collapsedPanels: new Set<string>(),
+    },
+    viewMode: 'edit',
+    timelineZoom: 1,
+  };
+}
 
-const MOCK_SHOTS: Shot[] = [
-  {
-    id: 'EP01_客栈相遇_001',
-    duration: 5,
-    scene: 'inn_interior_day',
-    transition: 'cut',
-    characters: MOCK_CHARACTERS.slice(0, 2),
-    tracks: MOCK_TRACKS,
-  },
-  {
-    id: 'EP01_客栈相遇_002',
-    duration: 3,
-    scene: 'inn_interior_day',
-    transition: 'dissolve',
-    characters: MOCK_CHARACTERS,
-    tracks: [],
-  },
-  {
-    id: 'EP01_皇宫对峙_003',
-    duration: 8,
-    scene: 'palace_hall',
-    transition: 'cut',
-    characters: [MOCK_CHARACTERS[0]],
-    tracks: [],
-  },
-];
+const initialState = createInitialState();
 
-const MOCK_PROJECT: Project = {
-  name: 'Panda Shot Engine',
-  shots: MOCK_SHOTS,
-};
+// ─── Reducer ────────────────────────────────────────────────
 
-/* ================================================================
-   Initial State
-   ================================================================ */
-
-const initialState: EditorState = {
-  currentProject: MOCK_PROJECT,
-  currentShotIndex: 0,
-  isPlaying: false,
-  currentTime: 0,
-  selectedCharacterId: null,
-  zoom: 100,
-  timelineZoom: 1,
-  dslText: DEFAULT_DSL,
-  validationResult: { valid: true, errors: [] },
-};
-
-/* ================================================================
-   Reducer
-   ================================================================ */
+function pushUndo(state: EditorState, description: string): EditorState {
+  const entry: UndoEntry = { description, snapshot: captureSnapshot(state) };
+  return {
+    ...state,
+    undoStack: [...state.undoStack.slice(-49), entry],
+    redoStack: [],
+  };
+}
 
 function editorReducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
-    case 'SET_PROJECT':
-      return { ...state, currentProject: action.project, currentShotIndex: 0, currentTime: 0 };
+    // ─── Project ──────────────────────────────────────────
+    case 'SET_PROJECT': {
+      return {
+        ...state,
+        project: action.project,
+        dslText: action.dslText,
+        currentShotIndex: 0,
+        currentTime: 0,
+        selectedElement: null,
+        ...rebuildProjectFromDsl(state, action.dslText),
+      };
+    }
 
-    case 'SET_SHOT':
-      return { ...state, currentShotIndex: action.index, currentTime: 0, selectedCharacterId: null };
+    case 'NEW_PROJECT': {
+      const newDsl = `shot "新镜头_001":\n  duration: 5s\n  set: "inn_interior"\n\n  at 0s:\n    camera wide\n\n  transition: cut`;
+      const stateWithUndo = pushUndo(state, 'New Project');
+      return {
+        ...stateWithUndo,
+        ...rebuildProjectFromDsl(stateWithUndo, newDsl),
+        currentTime: 0,
+        selectedElement: null,
+      };
+    }
 
+    case 'SET_PROJECT_NAME': {
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: { ...state.project, name: action.name },
+      };
+    }
+
+    // ─── Shot navigation ──────────────────────────────────
+    case 'SET_CURRENT_SHOT': {
+      const maxIndex = (state.project?.shots.length ?? 1) - 1;
+      const index = Math.max(0, Math.min(action.index, maxIndex));
+      return {
+        ...state,
+        currentShotIndex: index,
+        currentTime: 0,
+        selectedElement: null,
+      };
+    }
+
+    case 'ADD_SHOT': {
+      if (!state.project) return state;
+      const stateU = pushUndo(state, 'Add Shot');
+      const newShotNum = state.project.shots.length + 1;
+      const newShotDsl = `\n\nshot "新镜头_${String(newShotNum).padStart(3, '0')}":\n  duration: 5s\n  set: "inn_interior"\n\n  at 0s:\n    camera wide\n\n  transition: cut`;
+      const lines = stateU.dslText.split('\n');
+      // Find where to insert: after the shot at afterIndex
+      let insertLineIndex = lines.length;
+      let shotCount = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (/^shot\s+"/.test(lines[i].trim())) {
+          shotCount++;
+          if (shotCount > action.afterIndex) {
+            insertLineIndex = i;
+            break;
+          }
+        }
+      }
+      const newDslText =
+        insertLineIndex >= lines.length
+          ? stateU.dslText + newShotDsl
+          : [
+              ...lines.slice(0, insertLineIndex),
+              newShotDsl,
+              '',
+              ...lines.slice(insertLineIndex),
+            ].join('\n');
+      return {
+        ...stateU,
+        ...rebuildProjectFromDsl(stateU, newDslText),
+        currentShotIndex: action.afterIndex + 1,
+        currentTime: 0,
+      };
+    }
+
+    case 'REMOVE_SHOT': {
+      if (!state.project || state.project.shots.length <= 1) return state;
+      const stateU = pushUndo(state, 'Remove Shot');
+      const shots = [...state.project.shots];
+      shots.splice(action.index, 1);
+      const newDslText = serializeShots(shots);
+      return {
+        ...stateU,
+        ...rebuildProjectFromDsl(stateU, newDslText),
+        currentShotIndex: Math.min(
+          stateU.currentShotIndex,
+          Math.max(0, shots.length - 1),
+        ),
+        currentTime: 0,
+      };
+    }
+
+    case 'REORDER_SHOT': {
+      if (!state.project) return state;
+      const stateU = pushUndo(state, 'Reorder Shot');
+      const shots = [...state.project.shots];
+      const [moved] = shots.splice(action.fromIndex, 1);
+      shots.splice(action.toIndex, 0, moved);
+      const newDslText = serializeShots(shots);
+      return {
+        ...stateU,
+        ...rebuildProjectFromDsl(stateU, newDslText),
+        currentShotIndex: action.toIndex,
+      };
+    }
+
+    case 'DUPLICATE_SHOT': {
+      if (!state.project) return state;
+      const stateU = pushUndo(state, 'Duplicate Shot');
+      const shots = [...state.project.shots];
+      const orig = shots[action.index];
+      if (!orig) return state;
+      const dup: DslShot = {
+        ...JSON.parse(JSON.stringify(orig)),
+        id: orig.id + '_copy',
+      };
+      shots.splice(action.index + 1, 0, dup);
+      const newDslText = serializeShots(shots);
+      return {
+        ...stateU,
+        ...rebuildProjectFromDsl(stateU, newDslText),
+        currentShotIndex: action.index + 1,
+      };
+    }
+
+    // ─── DSL text ─────────────────────────────────────────
+    case 'SET_DSL_TEXT': {
+      return {
+        ...state,
+        dslText: action.text,
+      };
+    }
+
+    case 'PARSE_DSL': {
+      const stateU = pushUndo(state, 'Edit DSL');
+      return {
+        ...stateU,
+        ...rebuildProjectFromDsl(stateU, stateU.dslText),
+      };
+    }
+
+    // ─── Playback ─────────────────────────────────────────
     case 'PLAY':
       return { ...state, isPlaying: true };
 
     case 'PAUSE':
       return { ...state, isPlaying: false };
 
-    case 'STOP':
-      return { ...state, isPlaying: false, currentTime: 0 };
+    case 'SEEK': {
+      const maxTime = state.project?.shots[state.currentShotIndex]?.duration ?? 0;
+      return {
+        ...state,
+        currentTime: Math.max(0, Math.min(action.time, maxTime)),
+      };
+    }
 
-    case 'SEEK':
-      return { ...state, currentTime: Math.max(0, action.time) };
+    case 'SET_SPEED':
+      return { ...state, playbackSpeed: action.speed };
 
-    case 'SELECT_CHARACTER':
-      return { ...state, selectedCharacterId: action.id };
+    // ─── Selection ────────────────────────────────────────
+    case 'SELECT_ELEMENT':
+      return { ...state, selectedElement: action.element };
 
-    case 'UPDATE_DSL':
-      return { ...state, dslText: action.text };
+    case 'DESELECT':
+      return { ...state, selectedElement: null };
 
+    // ─── Undo/Redo ────────────────────────────────────────
+    case 'UNDO': {
+      if (state.undoStack.length === 0) return state;
+      const redoEntry: UndoEntry = {
+        description: 'Redo',
+        snapshot: captureSnapshot(state),
+      };
+      const undoEntry = state.undoStack[state.undoStack.length - 1];
+      const newUndoStack = state.undoStack.slice(0, -1);
+      const restored = undoEntry.snapshot;
+      const rebuilt = rebuildProjectFromDsl(state, restored.dslText);
+      return {
+        ...state,
+        ...rebuilt,
+        currentShotIndex: restored.currentShotIndex,
+        selectedElement: restored.selectedElement,
+        undoStack: newUndoStack,
+        redoStack: [...state.redoStack, redoEntry],
+      };
+    }
+
+    case 'REDO': {
+      if (state.redoStack.length === 0) return state;
+      const undoEntry: UndoEntry = {
+        description: 'Undo',
+        snapshot: captureSnapshot(state),
+      };
+      const redoEntry = state.redoStack[state.redoStack.length - 1];
+      const newRedoStack = state.redoStack.slice(0, -1);
+      const restored = redoEntry.snapshot;
+      const rebuilt = rebuildProjectFromDsl(state, restored.dslText);
+      return {
+        ...state,
+        ...rebuilt,
+        currentShotIndex: restored.currentShotIndex,
+        selectedElement: restored.selectedElement,
+        undoStack: [...state.undoStack, undoEntry],
+        redoStack: newRedoStack,
+      };
+    }
+
+    // ─── Zoom & View ──────────────────────────────────────
     case 'SET_ZOOM':
-      return { ...state, zoom: action.zoom };
+      return { ...state, zoom: Math.max(25, Math.min(200, action.zoom)) };
 
     case 'SET_TIMELINE_ZOOM':
-      return { ...state, timelineZoom: Math.max(0.25, Math.min(4, action.zoom)) };
-
-    case 'SET_VALIDATION':
-      return { ...state, validationResult: action.result };
-
-    case 'UPDATE_CHARACTER': {
-      if (!state.currentProject) return state;
-      const shots = [...state.currentProject.shots];
-      const shot = { ...shots[state.currentShotIndex] };
-      shot.characters = shot.characters.map((c) =>
-        c.id === action.id ? { ...c, ...action.changes } : c
-      );
-      shots[state.currentShotIndex] = shot;
       return {
         ...state,
-        currentProject: { ...state.currentProject, shots },
+        timelineZoom: Math.max(0.25, Math.min(4, action.zoom)),
+      };
+
+    case 'SET_VIEW_MODE':
+      return { ...state, viewMode: action.mode };
+
+    // ─── Shot property update ─────────────────────────────
+    case 'UPDATE_SHOT_PROPERTY': {
+      if (!state.project) return state;
+      const stateU = pushUndo(state, `Update ${action.key}`);
+      const shots = [...state.project.shots];
+      const shot = { ...shots[action.shotIndex] };
+      (shot as Record<string, unknown>)[action.key] = action.value;
+      shots[action.shotIndex] = shot;
+      const newDslText = serializeShots(shots);
+      return {
+        ...stateU,
+        project: { ...stateU.project!, shots },
+        dslText: newDslText,
+        ...(() => {
+          const { errors, warnings } = tryParseDsl(newDslText);
+          return { dslErrors: errors, dslWarnings: warnings };
+        })(),
       };
     }
 
-    case 'UPDATE_SHOT': {
-      if (!state.currentProject) return state;
-      const shots = [...state.currentProject.shots];
-      shots[state.currentShotIndex] = { ...shots[state.currentShotIndex], ...action.changes };
+    // ─── Panel Layout ─────────────────────────────────────
+    case 'UPDATE_PANEL_LAYOUT':
       return {
         ...state,
-        currentProject: { ...state.currentProject, shots },
+        panelLayout: { ...state.panelLayout, ...action.layout },
       };
-    }
 
-    case 'TOGGLE_TRACK_VISIBILITY': {
-      if (!state.currentProject) return state;
-      const shots = [...state.currentProject.shots];
-      const shot = { ...shots[state.currentShotIndex] };
-      shot.tracks = shot.tracks.map((t) =>
-        t.id === action.trackId ? { ...t, visible: !t.visible } : t
-      );
-      shots[state.currentShotIndex] = shot;
+    case 'TOGGLE_PANEL_COLLAPSE': {
+      const collapsed = new Set(state.panelLayout.collapsedPanels);
+      if (collapsed.has(action.panelId)) {
+        collapsed.delete(action.panelId);
+      } else {
+        collapsed.add(action.panelId);
+      }
       return {
         ...state,
-        currentProject: { ...state.currentProject, shots },
+        panelLayout: { ...state.panelLayout, collapsedPanels: collapsed },
       };
-    }
-
-    case 'SKIP_FORWARD': {
-      const shot = state.currentProject?.shots[state.currentShotIndex];
-      if (!shot) return state;
-      return { ...state, currentTime: Math.min(state.currentTime + 0.5, shot.duration) };
-    }
-
-    case 'SKIP_BACKWARD': {
-      return { ...state, currentTime: Math.max(state.currentTime - 0.5, 0) };
     }
 
     default:
@@ -377,14 +497,13 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
   }
 }
 
-/* ================================================================
-   Context + Provider + Hook
-   ================================================================ */
+// ─── Context ────────────────────────────────────────────────
 
 interface EditorContextValue {
   state: EditorState;
   dispatch: React.Dispatch<EditorAction>;
-  currentShot: Shot | null;
+  currentShot: DslShot | null;
+  totalDuration: number;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -392,11 +511,23 @@ const EditorContext = createContext<EditorContextValue | null>(null);
 export function EditorProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(editorReducer, initialState);
 
-  const currentShot =
-    state.currentProject?.shots[state.currentShotIndex] ?? null;
+  const currentShot = useMemo(
+    () => state.project?.shots[state.currentShotIndex] ?? null,
+    [state.project, state.currentShotIndex],
+  );
+
+  const totalDuration = useMemo(() => {
+    if (!state.project) return 0;
+    return state.project.shots.reduce((sum, s) => sum + s.duration, 0);
+  }, [state.project]);
+
+  const value = useMemo(
+    () => ({ state, dispatch, currentShot, totalDuration }),
+    [state, dispatch, currentShot, totalDuration],
+  );
 
   return (
-    <EditorContext.Provider value={{ state, dispatch, currentShot }}>
+    <EditorContext.Provider value={value}>
       {children}
     </EditorContext.Provider>
   );
@@ -410,40 +541,7 @@ export function useEditor(): EditorContextValue {
   return ctx;
 }
 
-/* ================================================================
-   DSL Validation Helper
-   ================================================================ */
+// ─── Re-exports for convenience ─────────────────────────────
 
-export function validateDsl(text: string): ValidationResult {
-  const errors: ValidationError[] = [];
-  const lines = text.split('\n');
-
-  if (lines.length === 0 || text.trim() === '') {
-    errors.push({ line: 1, message: 'DSL is empty' });
-    return { valid: false, errors };
-  }
-
-  // Check first line has shot declaration
-  if (!/^shot\s+"[^"]+"\s*:/.test(lines[0].trim())) {
-    errors.push({ line: 1, message: 'Expected shot declaration: shot "name":' });
-  }
-
-  // Check duration exists
-  const hasDuration = lines.some((l) => /^\s+duration:\s+\d/.test(l));
-  if (!hasDuration) {
-    errors.push({ line: 2, message: 'Missing required field: duration' });
-  }
-
-  // Check for unmatched quotes
-  lines.forEach((line, idx) => {
-    const quoteCount = (line.match(/"/g) || []).length;
-    if (quoteCount % 2 !== 0) {
-      errors.push({ line: idx + 1, message: 'Unmatched quote' });
-    }
-  });
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
+export { DEMO_CHARACTERS, DEMO_SCENES } from '../../demo/demo-project';
+export type { DemoCharacter, DemoScene } from '../../demo/demo-project';

@@ -1,10 +1,21 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { useEditor, DemoScene } from '../../hooks/useEditorState';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
+import { useEditor, SceneAsset } from '../../hooks/useEditorState';
 import './SceneManager.css';
+
+/** Read a file as a data URL */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 interface EditingScene {
   id: string | null;
   name: string;
+  backgroundImage?: string;
   color: string;
   gradientStart: string;
   gradientEnd: string;
@@ -14,18 +25,20 @@ interface EditingScene {
 
 export default function SceneManager() {
   const { state, dispatch } = useEditor();
-  const scenes = state.project?.scenes ?? [];
+  const scenes = state.project.scenes;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditingScene | null>(null);
   const [search, setSearch] = useState('');
+  const bgInputRef = useRef<HTMLInputElement>(null);
 
   const referencedIds = useMemo(() => {
     const ids = new Set<string>();
-    const regex = /set:\s*"([^"]+)"/g;
+    const regex = /scene\s+(\w+)/g;
     let m: RegExpExecArray | null;
-    while ((m = regex.exec(state.dslText)) !== null) ids.add(m[1]);
+    const allDsl = state.project.shots.map((s) => s.dsl).join('\n');
+    while ((m = regex.exec(allDsl)) !== null) ids.add(m[1]);
     return ids;
-  }, [state.dslText]);
+  }, [state.project.shots]);
 
   const filtered = useMemo(() => {
     if (!search) return scenes;
@@ -43,30 +56,42 @@ export default function SceneManager() {
     });
   }, []);
 
-  const startEdit = useCallback((scene: DemoScene) => {
+  const startEdit = useCallback((scene: SceneAsset) => {
     setEditing({
-      id: scene.id, name: scene.name, color: scene.color,
+      id: scene.id, name: scene.name,
+      backgroundImage: scene.backgroundImage,
+      color: scene.color,
       gradientStart: scene.gradientStart, gradientEnd: scene.gradientEnd,
       description: scene.description, floorY: scene.floorY,
     });
     setSelectedId(scene.id);
   }, []);
 
+  const handleBgUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editing) return;
+    const dataUrl = await readFileAsDataUrl(file);
+    setEditing({ ...editing, backgroundImage: dataUrl });
+  }, [editing]);
+
   const handleSave = useCallback(() => {
     if (!editing || !editing.name.trim()) return;
     if (editing.id === null) {
-      dispatch({ type: 'ADD_SCENE', scene: {
+      const newScene: SceneAsset = {
         id: editing.name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString(36),
         name: editing.name.trim(),
+        backgroundImage: editing.backgroundImage,
         color: editing.color,
         gradientStart: editing.gradientStart,
         gradientEnd: editing.gradientEnd,
         description: editing.description,
         floorY: editing.floorY,
-      }});
+      };
+      dispatch({ type: 'ADD_SCENE', scene: newScene });
     } else {
       dispatch({ type: 'UPDATE_SCENE', sceneId: editing.id, updates: {
         name: editing.name.trim(),
+        backgroundImage: editing.backgroundImage,
         color: editing.color,
         gradientStart: editing.gradientStart,
         gradientEnd: editing.gradientEnd,
@@ -107,7 +132,7 @@ export default function SceneManager() {
       <div className="manager-list">
         {filtered.length === 0 && (
           <div className="manager-empty">
-            <div className="manager-empty__icon">S</div>
+            <div className="manager-empty__icon">🎬</div>
             <div className="manager-empty__text">{search ? 'No matching scenes' : 'No scenes yet'}</div>
           </div>
         )}
@@ -115,21 +140,30 @@ export default function SceneManager() {
           <div key={scene.id} className={`manager-card ${selectedId === scene.id ? 'selected' : ''}`}
             onClick={() => setSelectedId(selectedId === scene.id ? null : scene.id)}>
             <div className="scene-preview-thumb">
-              <div className="scene-preview-thumb__gradient"
-                style={{ background: `linear-gradient(to bottom, ${scene.gradientStart}, ${scene.gradientEnd})` }} />
-              <div className="scene-preview-thumb__floor" style={{ backgroundColor: scene.color }} />
+              {scene.backgroundImage ? (
+                <img src={scene.backgroundImage} alt={scene.name} className="scene-preview-thumb__bg" />
+              ) : (
+                <>
+                  <div className="scene-preview-thumb__gradient"
+                    style={{ background: `linear-gradient(to bottom, ${scene.gradientStart}, ${scene.gradientEnd})` }} />
+                  <div className="scene-preview-thumb__floor" style={{ backgroundColor: scene.color }} />
+                </>
+              )}
             </div>
             <div className="manager-card__info">
               <div className="manager-card__name">
                 {scene.name}
                 {referencedIds.has(scene.id) && <span className="ref-badge">IN USE</span>}
               </div>
-              <div className="manager-card__meta">{scene.id} | floor: {(scene.floorY * 100).toFixed(0)}%</div>
+              <div className="manager-card__meta">
+                {scene.id} | floor: {(scene.floorY * 100).toFixed(0)}%
+                {scene.backgroundImage && ' | has bg image'}
+              </div>
             </div>
             <div className="manager-card__actions">
-              <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); startEdit(scene); }}>E</button>
-              <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); handleDuplicate(scene.id); }}>D</button>
-              <button className="manager-card__btn manager-card__btn--danger" onClick={(e) => { e.stopPropagation(); handleDelete(scene.id); }}>X</button>
+              <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); startEdit(scene); }}>✎</button>
+              <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); handleDuplicate(scene.id); }}>⧉</button>
+              <button className="manager-card__btn manager-card__btn--danger" onClick={(e) => { e.stopPropagation(); handleDelete(scene.id); }}>✕</button>
             </div>
           </div>
         ))}
@@ -142,6 +176,23 @@ export default function SceneManager() {
             <label className="manager-form__label">Name</label>
             <input className="manager-form__input" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
           </div>
+
+          {/* Background Image */}
+          <div className="manager-form__group">
+            <label className="manager-form__label">Background Image (optional)</label>
+            <div className="scene-bg-upload">
+              {editing.backgroundImage ? (
+                <div className="scene-bg-upload__preview">
+                  <img src={editing.backgroundImage} alt="bg" />
+                  <button type="button" className="scene-bg-upload__remove" onClick={() => setEditing({ ...editing, backgroundImage: undefined })}>✕</button>
+                </div>
+              ) : (
+                <button type="button" className="scene-bg-upload__btn" onClick={() => bgInputRef.current?.click()}>+ Upload Background</button>
+              )}
+              <input ref={bgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
+            </div>
+          </div>
+
           <div className="manager-form__group">
             <label className="manager-form__label">Color</label>
             <div className="manager-form__color-row">

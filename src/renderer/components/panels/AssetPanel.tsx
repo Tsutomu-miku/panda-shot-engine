@@ -1,182 +1,69 @@
-// ============================================================
-// panda-shot-engine — Asset Panel Component
-// Three tabs: Characters / Scenes / Props
-// Character preview thumbnails, scene color blocks,
-// drag-to-canvas, add character form, search/filter
-// ============================================================
+/**
+ * Asset Panel — Sidebar panel showing characters, scenes, and props
+ * 
+ * Uses image-based CharacterAsset and SceneAsset types.
+ */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useEditor, DEMO_CHARACTERS, DEMO_SCENES } from '../../hooks/useEditorState';
-import type { DemoCharacter, DemoScene } from '../../../demo/demo-project';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
+import { useEditor, CharacterAsset, SceneAsset } from '../../hooks/useEditorState';
+import { DEMO_CHARACTERS, DEMO_SCENES } from '../../../demo/demo-project';
 
-import './AssetPanel.css';
+// ─── Scene Preview Component ──────────────────────────────
 
-// ─── Mini panda head canvas thumbnail ───────────────────────
+const ScenePreview: React.FC<{ scene: SceneAsset }> = ({ scene }) => (
+  <div style={{
+    width: '100%', height: '100%', position: 'relative', borderRadius: 4, overflow: 'hidden',
+  }}>
+    {scene.backgroundImage ? (
+      <img src={scene.backgroundImage} alt={scene.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+    ) : (
+      <>
+        <div style={{
+          width: '100%', height: '100%',
+          background: `linear-gradient(to bottom, ${scene.gradientStart}, ${scene.gradientEnd})`,
+        }} />
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          height: `${(1 - scene.floorY) * 100}%`,
+          background: scene.color, opacity: 0.3,
+        }} />
+      </>
+    )}
+  </div>
+);
 
-function drawMiniPandaHead(
-  canvas: HTMLCanvasElement,
-  color: string,
-  expression: string,
-) {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+// ─── Character Thumbnail ────────────────────────────────
 
-  const W = canvas.width;
-  const H = canvas.height;
-  const cx = W / 2;
-  const cy = H / 2 + 2;
-  const r = Math.min(W, H) * 0.32;
-
-  ctx.clearRect(0, 0, W, H);
-
-  // Background circle with character color
-  ctx.fillStyle = color + '30';
-  ctx.beginPath();
-  ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Head
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#333';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Ears
-  ctx.fillStyle = '#222';
-  const earR = r * 0.3;
-  ctx.beginPath();
-  ctx.arc(cx - r * 0.7, cy - r * 0.75, earR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cx + r * 0.7, cy - r * 0.75, earR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Eye patches
-  ctx.fillStyle = '#222';
-  const epW = r * 0.35;
-  const epH = r * 0.28;
-  ctx.beginPath();
-  ctx.ellipse(cx - r * 0.33, cy - r * 0.1, epW, epH, -0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(cx + r * 0.33, cy - r * 0.1, epW, epH, 0.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Eyes
-  ctx.fillStyle = '#fff';
-  const eyeR = r * 0.12;
-  ctx.beginPath();
-  ctx.arc(cx - r * 0.33, cy - r * 0.1, eyeR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cx + r * 0.33, cy - r * 0.1, eyeR, 0, Math.PI * 2);
-  ctx.fill();
-  // Pupils
-  ctx.fillStyle = '#111';
-  ctx.beginPath();
-  ctx.arc(cx - r * 0.3, cy - r * 0.1, eyeR * 0.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cx + r * 0.36, cy - r * 0.1, eyeR * 0.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Nose
-  ctx.fillStyle = '#333';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy + r * 0.2, r * 0.1, r * 0.07, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Mouth based on expression
-  ctx.strokeStyle = '#333';
-  ctx.lineWidth = 1;
-  ctx.lineCap = 'round';
-
-  if (expression === 'happy') {
-    ctx.beginPath();
-    ctx.arc(cx, cy + r * 0.3, r * 0.25, 0.1 * Math.PI, 0.9 * Math.PI);
-    ctx.stroke();
-  } else if (expression === 'angry') {
-    ctx.fillStyle = '#333';
-    ctx.fillRect(cx - r * 0.2, cy + r * 0.35, r * 0.4, r * 0.15);
-  } else if (expression === 'shocked') {
-    ctx.fillStyle = '#333';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + r * 0.4, r * 0.15, r * 0.2, 0, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    ctx.beginPath();
-    ctx.moveTo(cx - r * 0.2, cy + r * 0.4);
-    ctx.lineTo(cx + r * 0.2, cy + r * 0.4);
-    ctx.stroke();
+const CharacterThumb: React.FC<{ character: CharacterAsset }> = ({ character }) => {
+  if (character.thumbnail) {
+    return <img src={character.thumbnail} alt={character.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4 }} />;
   }
-
-  // Color indicator dot
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(W - 6, 6, 4, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-// ─── Character Thumbnail Component ──────────────────────────
-
-const CharacterThumb: React.FC<{ character: DemoCharacter }> = ({ character }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    if (canvasRef.current) {
-      drawMiniPandaHead(canvasRef.current, character.color, 'neutral');
-    }
-  }, [character]);
-
+  // Fallback: show first letter
   return (
-    <canvas
-      ref={canvasRef}
-      width={48}
-      height={48}
-      style={{ borderRadius: 4 }}
-    />
-  );
-};
-
-// ─── Scene Preview Block ────────────────────────────────────
-
-const ScenePreview: React.FC<{ scene: DemoScene }> = ({ scene }) => {
-  return (
-    <div
-      className="scene-preview-block"
-      style={{
-        width: 48,
-        height: 48,
-        borderRadius: 4,
-        background: `linear-gradient(180deg, ${scene.gradientStart}, ${scene.gradientEnd})`,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Floor line */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: `${(1 - scene.floorY) * 100}%`,
-          left: 0,
-          right: 0,
-          height: 1,
-          background: 'rgba(255,255,255,0.2)',
-        }}
-      />
+    <div style={{
+      width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 20, fontWeight: 700, color: '#b4befe', background: '#252538', borderRadius: 4,
+    }}>
+      {character.name[0]?.toUpperCase() ?? '?'}
     </div>
   );
 };
 
-// ─── Add Character Modal ────────────────────────────────────
+// ─── Add Character Modal ────────────────────────────────
 
 interface AddCharacterModalProps {
   open: boolean;
   onClose: () => void;
   onAdd: (name: string, style: string) => void;
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 const AddCharacterModal: React.FC<AddCharacterModalProps> = ({ open, onClose, onAdd }) => {
@@ -185,48 +72,25 @@ const AddCharacterModal: React.FC<AddCharacterModalProps> = ({ open, onClose, on
 
   if (!open) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (name.trim()) {
-      onAdd(name.trim(), style);
-      setName('');
-      setStyle('humanoid');
-      onClose();
-    }
-  };
-
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>Add Character</span>
-          <button className="btn btn--small" onClick={onClose}>X</button>
-        </div>
-        <form onSubmit={handleSubmit} className="modal-body">
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">Add Character</div>
+        <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) { onAdd(name.trim(), style); setName(''); onClose(); } }} className="modal-body">
           <div className="prop-row">
             <span className="prop-row__label">Name</span>
             <div className="prop-row__value">
-              <input
-                type="text"
-                className="input-text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Character name..."
-                autoFocus
-              />
+              <input type="text" className="input-text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Character name..." autoFocus />
             </div>
           </div>
           <div className="prop-row">
             <span className="prop-row__label">Style</span>
             <div className="prop-row__value">
-              <select
-                className="input-select"
-                value={style}
-                onChange={(e) => setStyle(e.target.value)}
-              >
+              <select className="input-select" value={style} onChange={(e) => setStyle(e.target.value)}>
                 <option value="humanoid">Humanoid</option>
                 <option value="beast">Beast</option>
                 <option value="chibi">Chibi</option>
+                <option value="custom">Custom</option>
               </select>
             </div>
           </div>
@@ -240,7 +104,7 @@ const AddCharacterModal: React.FC<AddCharacterModalProps> = ({ open, onClose, on
   );
 };
 
-// ─── Asset Panel Component ──────────────────────────────────
+// ─── Asset Panel Component ──────────────────────────────
 
 type AssetTab = 'characters' | 'scenes' | 'props';
 
@@ -272,7 +136,7 @@ const AssetPanel: React.FC = () => {
 
   // Drag start for characters
   const handleCharDragStart = useCallback(
-    (e: React.DragEvent, char: DemoCharacter) => {
+    (e: React.DragEvent, char: CharacterAsset) => {
       e.dataTransfer.setData(
         'application/panda-asset',
         JSON.stringify({ type: 'character', id: char.id, name: char.name }),
@@ -283,7 +147,7 @@ const AssetPanel: React.FC = () => {
   );
 
   const handleSceneDragStart = useCallback(
-    (e: React.DragEvent, scene: DemoScene) => {
+    (e: React.DragEvent, scene: SceneAsset) => {
       e.dataTransfer.setData(
         'application/panda-asset',
         JSON.stringify({ type: 'scene', id: scene.id, name: scene.name }),
@@ -316,11 +180,19 @@ const AssetPanel: React.FC = () => {
 
   const handleAddCharacter = useCallback(
     (name: string, style: string) => {
-      // In a real implementation this would add to project state
-      // For now just log
-      console.log('Add character:', name, style);
+      const id = name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString(36);
+      const newChar: CharacterAsset = {
+        id,
+        name,
+        style: style as CharacterAsset['style'],
+        parts: {},
+        expressions: {},
+        skeletonType: style === 'beast' ? 'beast' : style === 'chibi' ? 'chibi' : 'humanoid',
+        description: '',
+      };
+      dispatch({ type: 'ADD_CHARACTER', character: newChar });
     },
-    [],
+    [dispatch],
   );
 
   // Built-in props list
@@ -392,15 +264,15 @@ const AssetPanel: React.FC = () => {
                   onDragStart={(e) => handleCharDragStart(e, char)}
                   onClick={() => handleSelectCharacter(char.id)}
                 >
-                  <div className="asset-item__thumb" style={{ backgroundColor: char.color + '20' }}>
+                  <div className="asset-item__thumb" style={{ backgroundColor: '#252538' }}>
                     <CharacterThumb character={char} />
                   </div>
                   <div className="asset-item__info">
                     <div className="asset-item__name">{char.name}</div>
-                    <div className="asset-item__type">{char.id} | {char.skeletonType}</div>
-                    <div className="asset-item__desc">{char.description}</div>
+                    <div className="asset-item__type">{char.style} | {Object.keys(char.parts).length} parts | {Object.keys(char.expressions).length} expr</div>
+                    {char.description && <div className="asset-item__desc">{char.description}</div>}
                   </div>
-                  <span className="asset-item__drag-handle">...</span>
+                  <span className="asset-item__drag-handle">⠇</span>
                 </div>
               );
             })}

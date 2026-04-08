@@ -1,13 +1,14 @@
 // ============================================================
 // panda-shot-engine — Main App Component
-// Enhanced with demo loading, keyboard shortcuts, and
-// error boundary for production resilience.
+// Enhanced with demo loading, keyboard shortcuts,
+// error boundary, and Manager View integration.
 // ============================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { EditorProvider, useEditor } from './hooks/useEditorState';
 import EditorLayout from './components/layout/EditorLayout';
 import Toolbar from './components/layout/Toolbar';
+import ManagerView from './components/managers/ManagerView';
 import { FULL_DEMO_DSL, DEMO_CHARACTERS, DEMO_SCENES } from '../demo/demo-project';
 import { parseShots } from '../core/dsl/parser';
 import { serializeShots } from '../core/dsl/serializer';
@@ -154,47 +155,41 @@ function SplashScreen({ onLoadDemo, onNewProject }: {
 
 // ─── Keyboard Shortcuts ─────────────────────────────────────
 
-function KeyboardShortcuts() {
+function KeyboardShortcuts({ onOpenManager }: { onOpenManager: () => void }) {
   const { state, dispatch, currentShot } = useEditor();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Don't intercept when typing in inputs
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
       const ctrl = e.ctrlKey || e.metaKey;
       const shift = e.shiftKey;
 
-      // Space: Play / Pause
       if (e.code === 'Space') {
         e.preventDefault();
         dispatch({ type: state.isPlaying ? 'PAUSE' : 'PLAY' });
         return;
       }
 
-      // Ctrl+Z: Undo
       if (ctrl && !shift && e.code === 'KeyZ') {
         e.preventDefault();
         dispatch({ type: 'UNDO' });
         return;
       }
 
-      // Ctrl+Shift+Z or Ctrl+Y: Redo
       if ((ctrl && shift && e.code === 'KeyZ') || (ctrl && e.code === 'KeyY')) {
         e.preventDefault();
         dispatch({ type: 'REDO' });
         return;
       }
 
-      // Delete / Backspace: Deselect or delete shot
       if (e.code === 'Escape') {
         e.preventDefault();
         dispatch({ type: 'DESELECT' });
         return;
       }
 
-      // 1, 2, 3: View modes
       if (e.code === 'Digit1' && !ctrl) {
         dispatch({ type: 'SET_VIEW_MODE', mode: 'edit' });
         return;
@@ -208,7 +203,13 @@ function KeyboardShortcuts() {
         return;
       }
 
-      // Left / Right: Step through time
+      // Ctrl+M: Open Manager View
+      if (ctrl && e.code === 'KeyM') {
+        e.preventDefault();
+        onOpenManager();
+        return;
+      }
+
       if (e.code === 'ArrowLeft' && !ctrl) {
         e.preventDefault();
         dispatch({ type: 'SEEK', time: Math.max(0, state.currentTime - 0.1) });
@@ -224,7 +225,6 @@ function KeyboardShortcuts() {
         return;
       }
 
-      // Up / Down: Navigate shots
       if (e.code === 'ArrowUp' && !ctrl) {
         e.preventDefault();
         if (state.currentShotIndex > 0) {
@@ -247,21 +247,18 @@ function KeyboardShortcuts() {
         return;
       }
 
-      // Home: Seek to start
       if (e.code === 'Home') {
         e.preventDefault();
         dispatch({ type: 'SEEK', time: 0 });
         return;
       }
 
-      // End: Seek to end
       if (e.code === 'End') {
         e.preventDefault();
         dispatch({ type: 'SEEK', time: currentShot?.duration ?? 0 });
         return;
       }
 
-      // Ctrl+= / Ctrl+-: Zoom
       if (ctrl && (e.code === 'Equal' || e.code === 'NumpadAdd')) {
         e.preventDefault();
         dispatch({ type: 'SET_ZOOM', zoom: state.zoom + 25 });
@@ -273,14 +270,12 @@ function KeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+0: Reset zoom
       if (ctrl && e.code === 'Digit0') {
         e.preventDefault();
         dispatch({ type: 'SET_ZOOM', zoom: 100 });
         return;
       }
 
-      // Ctrl+N: New project
       if (ctrl && e.code === 'KeyN') {
         e.preventDefault();
         dispatch({ type: 'NEW_PROJECT' });
@@ -290,18 +285,20 @@ function KeyboardShortcuts() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [state, dispatch, currentShot]);
+  }, [state, dispatch, currentShot, onOpenManager]);
 
   return null;
 }
 
 // ─── Status Bar ─────────────────────────────────────────────
 
-function StatusBar() {
+function StatusBar({ onOpenManager }: { onOpenManager: () => void }) {
   const { state, totalDuration } = useEditor();
 
   const shotCount = state.project?.shots.length ?? 0;
   const charCount = state.project?.characters.length ?? 0;
+  const sceneCount = state.project?.scenes.length ?? 0;
+  const actionCount = state.project?.customActions.length ?? 0;
   const errCount = state.dslErrors.length;
   const warnCount = state.dslWarnings.length;
 
@@ -317,13 +314,32 @@ function StatusBar() {
         </span>
         <span className="status-sep">|</span>
         <span className="status-item">
-          {charCount} character{charCount !== 1 ? 's' : ''}
+          {charCount} char{charCount !== 1 ? 's' : ''}
         </span>
+        <span className="status-sep">|</span>
+        <span className="status-item">
+          {sceneCount} scene{sceneCount !== 1 ? 's' : ''}
+        </span>
+        {actionCount > 0 && (
+          <>
+            <span className="status-sep">|</span>
+            <span className="status-item">
+              {actionCount} custom action{actionCount !== 1 ? 's' : ''}
+            </span>
+          </>
+        )}
       </div>
       <div className="status-bar-center">
         {state.viewMode === 'edit' && 'Edit Mode'}
         {state.viewMode === 'preview' && 'Preview Mode'}
         {state.viewMode === 'split' && 'Split View'}
+        <button
+          className="status-manager-btn"
+          onClick={onOpenManager}
+          title="Open Asset Manager (Ctrl+M)"
+        >
+          Manage Assets
+        </button>
       </div>
       <div className="status-bar-right">
         {errCount > 0 && (
@@ -354,6 +370,7 @@ function StatusBar() {
 
 function AppInner() {
   const [showSplash, setShowSplash] = useState(false);
+  const [showManager, setShowManager] = useState(false);
   const { dispatch } = useEditor();
 
   const handleLoadDemo = useCallback(() => {
@@ -366,6 +383,7 @@ function AppInner() {
           shots,
           characters: [...DEMO_CHARACTERS],
           scenes: [...DEMO_SCENES],
+          customActions: [],
         },
         dslText: FULL_DEMO_DSL,
       });
@@ -380,6 +398,14 @@ function AppInner() {
     setShowSplash(false);
   }, [dispatch]);
 
+  const handleOpenManager = useCallback(() => {
+    setShowManager(true);
+  }, []);
+
+  const handleCloseManager = useCallback(() => {
+    setShowManager(false);
+  }, []);
+
   if (showSplash) {
     return (
       <SplashScreen
@@ -391,10 +417,11 @@ function AppInner() {
 
   return (
     <div className="app-root">
-      <KeyboardShortcuts />
+      <KeyboardShortcuts onOpenManager={handleOpenManager} />
       <Toolbar />
       <EditorLayout />
-      <StatusBar />
+      <StatusBar onOpenManager={handleOpenManager} />
+      {showManager && <ManagerView onClose={handleCloseManager} />}
     </div>
   );
 }

@@ -288,3 +288,25 @@
 .status-ok {
   color: var(--status-ok);
 }
+
+/* ─── Manager Button in Status Bar ─────────────────────────── */
+
+.status-manager-btn {
+  padding: 2px 10px;
+  margin-left: 8px;
+  border: 1px solid #7c3aed80;
+  border-radius: 10px;
+  background: #7c3aed20;
+  color: #b4befe;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.status-manager-btn:hover {
+  background: #7c3aed40;
+  border-color: #7c3aed;
+  color: #cdd6f4;
+}

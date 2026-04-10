@@ -38,9 +38,12 @@ const d = (deg: number) => (deg * Math.PI) / 180;
 export const idle: ActionDefinition = {
   id: 'idle',
   name: 'Idle',
+  category: 'idle',
+  tags: ['breathing', 'rest', 'standing'],
+  description: 'Gentle breathing sway while standing still',
+  targetSkeleton: 'humanoid',
   duration: 2.0,
   loop: true,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -88,9 +91,12 @@ export const idle: ActionDefinition = {
 export const walk_right: ActionDefinition = {
   id: 'walk_right',
   name: 'Walk Right',
+  category: 'movement',
+  tags: ['walk', 'locomotion', 'right'],
+  description: 'Walking cycle facing right',
+  targetSkeleton: 'humanoid',
   duration: 0.8,
   loop: true,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -172,9 +178,12 @@ export const walk_right: ActionDefinition = {
 export const walk_left: ActionDefinition = {
   id: 'walk_left',
   name: 'Walk Left',
+  category: 'movement',
+  tags: ['walk', 'locomotion', 'left'],
+  description: 'Walking cycle facing left',
+  targetSkeleton: 'humanoid',
   duration: 0.8,
   loop: true,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -256,9 +265,12 @@ export const walk_left: ActionDefinition = {
 export const run_right: ActionDefinition = {
   id: 'run_right',
   name: 'Run Right',
+  category: 'movement',
+  tags: ['run', 'fast', 'locomotion'],
+  description: 'Running cycle facing right',
+  targetSkeleton: 'humanoid',
   duration: 0.5,
   loop: true,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -345,9 +357,12 @@ export const run_right: ActionDefinition = {
 export const punch: ActionDefinition = {
   id: 'punch',
   name: 'Punch',
+  category: 'combat',
+  tags: ['attack', 'melee', 'fist'],
+  description: 'Throw a forward punch',
+  targetSkeleton: 'humanoid',
   duration: 0.4,
   loop: false,
-  easing: 'easeOut',
   keyframes: [
     {
       time: 0,
@@ -407,9 +422,12 @@ export const punch: ActionDefinition = {
 export const kick: ActionDefinition = {
   id: 'kick',
   name: 'Kick',
+  category: 'combat',
+  tags: ['attack', 'melee', 'leg'],
+  description: 'Front kick attack',
+  targetSkeleton: 'humanoid',
   duration: 0.5,
   loop: false,
-  easing: 'easeOut',
   keyframes: [
     {
       time: 0,
@@ -469,9 +487,12 @@ export const kick: ActionDefinition = {
 export const sword_slash: ActionDefinition = {
   id: 'sword_slash',
   name: 'Sword Slash',
+  category: 'combat',
+  tags: ['attack', 'weapon', 'sword'],
+  description: 'Diagonal slash with right arm',
+  targetSkeleton: 'humanoid',
   duration: 0.6,
   loop: false,
-  easing: 'easeOut',
   keyframes: [
     {
       time: 0,
@@ -531,9 +552,12 @@ export const sword_slash: ActionDefinition = {
 export const bow: ActionDefinition = {
   id: 'bow',
   name: 'Bow',
+  category: 'gesture',
+  tags: ['greeting', 'respect', 'polite'],
+  description: 'Polite forward bow',
+  targetSkeleton: 'humanoid',
   duration: 1.5,
   loop: false,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -593,9 +617,12 @@ export const bow: ActionDefinition = {
 export const nod: ActionDefinition = {
   id: 'nod',
   name: 'Nod',
+  category: 'gesture',
+  tags: ['agree', 'yes', 'head'],
+  description: 'Head nod gesture',
+  targetSkeleton: 'humanoid',
   duration: 0.6,
   loop: false,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -639,9 +666,12 @@ export const nod: ActionDefinition = {
 export const shake_head: ActionDefinition = {
   id: 'shake_head',
   name: 'Shake Head',
+  category: 'gesture',
+  tags: ['disagree', 'no', 'head'],
+  description: 'Head shake left and right',
+  targetSkeleton: 'humanoid',
   duration: 0.8,
   loop: false,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -688,9 +718,12 @@ export const shake_head: ActionDefinition = {
 export const wave: ActionDefinition = {
   id: 'wave',
   name: 'Wave',
+  category: 'gesture',
+  tags: ['greeting', 'hello', 'hand'],
+  description: 'Wave hand greeting',
+  targetSkeleton: 'humanoid',
   duration: 1.2,
   loop: false,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -756,9 +789,12 @@ export const wave: ActionDefinition = {
 export const sit_down: ActionDefinition = {
   id: 'sit_down',
   name: 'Sit Down',
+  category: 'idle',
+  tags: ['sit', 'rest', 'down'],
+  description: 'Sit down on the ground',
+  targetSkeleton: 'humanoid',
   duration: 1.0,
   loop: false,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -828,9 +864,12 @@ export const sit_down: ActionDefinition = {
 export const stand_up: ActionDefinition = {
   id: 'stand_up',
   name: 'Stand Up',
+  category: 'movement',
+  tags: ['stand', 'rise', 'up'],
+  description: 'Stand up from sitting position',
+  targetSkeleton: 'humanoid',
   duration: 0.8,
   loop: false,
-  easing: 'easeOut',
   keyframes: [
     {
       time: 0,
@@ -898,9 +937,12 @@ export const stand_up: ActionDefinition = {
 export const knocked_back: ActionDefinition = {
   id: 'knocked_back',
   name: 'Knocked Back',
+  category: 'combat',
+  tags: ['hit', 'reaction', 'damage'],
+  description: 'Hit reaction / knockback',
+  targetSkeleton: 'humanoid',
   duration: 0.8,
   loop: false,
-  easing: 'bounce',
   keyframes: [
     {
       time: 0,
@@ -966,9 +1008,12 @@ export const knocked_back: ActionDefinition = {
 export const jump: ActionDefinition = {
   id: 'jump',
   name: 'Jump',
+  category: 'movement',
+  tags: ['jump', 'leap', 'air'],
+  description: 'Jump in place',
+  targetSkeleton: 'humanoid',
   duration: 0.7,
   loop: false,
-  easing: 'easeOut',
   keyframes: [
     {
       time: 0,
@@ -1062,9 +1107,12 @@ export const jump: ActionDefinition = {
 export const cast_spell: ActionDefinition = {
   id: 'cast_spell',
   name: 'Cast Spell',
+  category: 'combat',
+  tags: ['magic', 'spell', 'cast'],
+  description: 'Spell casting gesture with raised arms',
+  targetSkeleton: 'humanoid',
   duration: 1.2,
   loop: false,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -1144,9 +1192,12 @@ export const cast_spell: ActionDefinition = {
 export const drink: ActionDefinition = {
   id: 'drink',
   name: 'Drink',
+  category: 'gesture',
+  tags: ['drink', 'cup', 'hand'],
+  description: 'Drinking motion with cup',
+  targetSkeleton: 'humanoid',
   duration: 1.5,
   loop: false,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -1222,9 +1273,12 @@ export const drink: ActionDefinition = {
 export const pat_shoulder: ActionDefinition = {
   id: 'pat_shoulder',
   name: 'Pat Shoulder',
+  category: 'gesture',
+  tags: ['comfort', 'touch', 'friendly'],
+  description: 'Pat someone on the shoulder',
+  targetSkeleton: 'humanoid',
   duration: 1.0,
   loop: false,
-  easing: 'easeInOut',
   keyframes: [
     {
       time: 0,
@@ -1296,9 +1350,12 @@ export const pat_shoulder: ActionDefinition = {
 export const point: ActionDefinition = {
   id: 'point',
   name: 'Point',
+  category: 'gesture',
+  tags: ['point', 'direct', 'finger'],
+  description: 'Point forward with index finger',
+  targetSkeleton: 'humanoid',
   duration: 0.8,
   loop: false,
-  easing: 'easeOut',
   keyframes: [
     {
       time: 0,
@@ -1406,4 +1463,32 @@ export function getActionIds(): string[] {
  */
 export function hasAction(id: string): boolean {
   return id in ACTION_LIBRARY;
+}
+
+
+// =========================================================================
+// BUILTIN_ACTIONS array (for ActionManager)
+// =========================================================================
+
+export const BUILTIN_ACTIONS: ActionDefinition[] = Object.values(ACTION_LIBRARY);
+
+/**
+ * Get actions filtered by category
+ */
+export function getActionsByCategory(category: string): ActionDefinition[] {
+  return BUILTIN_ACTIONS.filter((a) => a.category === category);
+}
+
+/**
+ * Search actions by name, tags, or description
+ */
+export function searchActions(query: string): ActionDefinition[] {
+  const q = query.toLowerCase();
+  return BUILTIN_ACTIONS.filter((a) => {
+    if (a.name.toLowerCase().includes(q)) return true;
+    if (a.id.toLowerCase().includes(q)) return true;
+    if (a.description && a.description.toLowerCase().includes(q)) return true;
+    if (a.tags && a.tags.some((t) => t.toLowerCase().includes(q))) return true;
+    return false;
+  });
 }

@@ -12,9 +12,9 @@ import React, {
   ReactNode,
 } from 'react';
 
-import { Shot as DslShot, DiagnosticMessage } from '../../core/dsl/types';
+import { Shot as DslShot, DiagnosticMessage, serializeShot } from '../../core/dsl/types';
 import { parseShots } from '../../core/dsl/parser';
-import { serializeShots } from '../../core/dsl/serializer';
+import { serializeShot, serializeShots } from '../../core/dsl/serializer';
 import { Validator } from '../../core/dsl/validator';
 import type {
   CharacterAsset,
@@ -63,7 +63,7 @@ export interface PanelLayout {
 export interface EditorState {
   project: PandaProject | null;
   currentShotIndex: number;
-  currentTime: number;
+  playbackTime: number;
   isPlaying: boolean;
   playbackSpeed: number;
   zoom: number;
@@ -84,7 +84,7 @@ export interface EditorState {
 
 export interface PandaProject {
   name: string;
-  shots: DslShot[];
+  shots: RendererShot[];
   characters: CharacterAsset[];
   scenes: SceneAsset[];
 }
@@ -100,6 +100,11 @@ export interface UndoEntry {
   };
 }
 
+export type RendererShot = DslShot & {
+  dsl: string;
+  label: string;
+};
+
 function captureSnapshot(state: EditorState): UndoEntry['snapshot'] {
   return {
     dslText: state.dslText,
@@ -111,18 +116,26 @@ function captureSnapshot(state: EditorState): UndoEntry['snapshot'] {
 // ─── Action Types ───────────────────────────────────────────
 
 export type EditorAction =
-  | { type: 'SET_PROJECT'; project: PandaProject; dslText: string }
+  | { type: 'SET_PROJECT'; project: Omit<PandaProject, 'shots'> & { shots: DslShot[] }; dslText: string }
   | { type: 'NEW_PROJECT' }
   | { type: 'SET_CURRENT_SHOT'; index: number }
+  | { type: 'SELECT_SHOT'; index: number }
   | { type: 'ADD_SHOT'; afterIndex: number }
+  | { type: 'ADD_SHOT'; shot: Partial<RendererShot> & { id: string; duration: number } }
   | { type: 'REMOVE_SHOT'; index: number }
+  | { type: 'REMOVE_SHOT'; shotId: string }
   | { type: 'REORDER_SHOT'; fromIndex: number; toIndex: number }
+  | { type: 'REORDER_SHOTS'; fromIndex: number; toIndex: number }
   | { type: 'DUPLICATE_SHOT'; index: number }
   | { type: 'SET_DSL_TEXT'; text: string }
+  | { type: 'UPDATE_DSL'; text: string }
   | { type: 'PARSE_DSL' }
   | { type: 'PLAY' }
   | { type: 'PAUSE' }
+  | { type: 'TOGGLE_PLAY' }
   | { type: 'SEEK'; time: number }
+  | { type: 'SET_PLAYBACK_TIME'; time: number }
+  | { type: 'STOP' }
   | { type: 'SET_SPEED'; speed: number }
   | { type: 'SELECT_ELEMENT'; element: SelectedElement }
   | { type: 'DESELECT' }
@@ -180,11 +193,26 @@ function tryParseDsl(text: string): {
   }
 }
 
+function normalizeShotsWithDsl(shots: DslShot[], dslText: string): RendererShot[] {
+  const shotTexts = dslText
+    .split(/\n(?=shot ")/)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.startsWith('shot "'));
+
+  return shots.map((shot, index) => ({
+    ...shot,
+    dsl: shotTexts[index] ?? serializeShot(shot),
+    label: shot.id,
+  }));
+}
+
 function rebuildProjectFromDsl(state: EditorState, dslText: string): Partial<EditorState> {
   const { shots, errors, warnings } = tryParseDsl(dslText);
+  const shotsWithDsl = normalizeShotsWithDsl(shots, dslText);
+
   const project: PandaProject = {
     name: state.project?.name ?? 'Untitled Project',
-    shots,
+    shots: shotsWithDsl,
     characters: state.project?.characters ?? [...DEMO_CHARACTERS],
     scenes: state.project?.scenes ?? [...DEMO_SCENES],
   };
@@ -193,7 +221,7 @@ function rebuildProjectFromDsl(state: EditorState, dslText: string): Partial<Edi
     dslText,
     dslErrors: errors,
     dslWarnings: warnings,
-    currentShotIndex: Math.min(state.currentShotIndex, Math.max(0, shots.length - 1)),
+    currentShotIndex: Math.min(state.currentShotIndex, Math.max(0, shotsWithDsl.length - 1)),
   };
 }
 
@@ -212,10 +240,11 @@ function updateCharInProject(state: EditorState, charId: string, updater: (c: Ch
 function createInitialState(): EditorState {
   const dslText = FULL_DEMO_DSL;
   const { shots, errors, warnings } = tryParseDsl(dslText);
+  const normalizedShots = normalizeShotsWithDsl(shots, dslText);
 
   const project: PandaProject = {
     name: 'Panda Shot Engine — 客栈相遇',
-    shots,
+    shots: normalizedShots,
     characters: [...DEMO_CHARACTERS],
     scenes: [...DEMO_SCENES],
   };
@@ -223,7 +252,7 @@ function createInitialState(): EditorState {
   return {
     project,
     currentShotIndex: 0,
-    currentTime: 0,
+    playbackTime: 0,
     isPlaying: false,
     playbackSpeed: 1,
     zoom: 100,
@@ -263,13 +292,13 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
     // ─── Project ──────────────────────────────────────────
     case 'SET_PROJECT':
       return { ...state, project: action.project, dslText: action.dslText,
-        currentShotIndex: 0, currentTime: 0, selectedElement: null,
+        currentShotIndex: 0, playbackTime: 0, selectedElement: null,
         ...rebuildProjectFromDsl(state, action.dslText) };
 
     case 'NEW_PROJECT': {
       const newDsl = `shot "新镜头_001":\n  duration: 5s\n  set: "inn_interior"\n\n  at 0s:\n    camera wide\n\n  transition: cut`;
       const s = pushUndo(state, 'New Project');
-      return { ...s, ...rebuildProjectFromDsl(s, newDsl), currentTime: 0, selectedElement: null };
+      return { ...s, ...rebuildProjectFromDsl(s, newDsl), playbackTime: 0, selectedElement: null };
     }
 
     case 'SET_PROJECT_NAME':
@@ -280,25 +309,52 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
     case 'SET_CURRENT_SHOT': {
       const max = (state.project?.shots.length ?? 1) - 1;
       return { ...state, currentShotIndex: Math.max(0, Math.min(action.index, max)),
-        currentTime: 0, selectedElement: null };
+        playbackTime: 0, selectedElement: null };
+    }
+
+    case 'SELECT_SHOT': {
+      const max = (state.project?.shots.length ?? 1) - 1;
+      return {
+        ...state,
+        currentShotIndex: Math.max(0, Math.min(action.index, max)),
+        playbackTime: 0,
+      };
     }
 
     case 'ADD_SHOT': {
       if (!state.project) return state;
+      if ('shot' in action) {
+        const shots = [...state.project.shots, action.shot as RendererShot];
+        return {
+          ...state,
+          project: { ...state.project, shots },
+          currentShotIndex: shots.length - 1,
+          playbackTime: 0,
+        };
+      }
       const s = pushUndo(state, 'Add Shot');
       const num = state.project.shots.length + 1;
       const newDsl = s.dslText + `\n\nshot "新镜头_${String(num).padStart(3, '0')}":\n  duration: 5s\n  set: "inn_interior"\n\n  at 0s:\n    camera wide\n\n  transition: cut`;
-      return { ...s, ...rebuildProjectFromDsl(s, newDsl), currentShotIndex: action.afterIndex + 1, currentTime: 0 };
+      return { ...s, ...rebuildProjectFromDsl(s, newDsl), currentShotIndex: action.afterIndex + 1, playbackTime: 0 };
     }
 
     case 'REMOVE_SHOT': {
       if (!state.project || state.project.shots.length <= 1) return state;
+      if ('shotId' in action) {
+        const shots = state.project.shots.filter((shot) => shot.id !== action.shotId);
+        return {
+          ...state,
+          project: { ...state.project, shots },
+          currentShotIndex: Math.min(state.currentShotIndex, Math.max(0, shots.length - 1)),
+          playbackTime: 0,
+        };
+      }
       const s = pushUndo(state, 'Remove Shot');
       const shots = [...state.project.shots];
       shots.splice(action.index, 1);
       const newDsl = serializeShots(shots);
       return { ...s, ...rebuildProjectFromDsl(s, newDsl),
-        currentShotIndex: Math.min(s.currentShotIndex, Math.max(0, shots.length - 1)), currentTime: 0 };
+        currentShotIndex: Math.min(s.currentShotIndex, Math.max(0, shots.length - 1)), playbackTime: 0 };
     }
 
     case 'REORDER_SHOT': {
@@ -308,6 +364,18 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
       const [moved] = shots.splice(action.fromIndex, 1);
       shots.splice(action.toIndex, 0, moved);
       return { ...s, ...rebuildProjectFromDsl(s, serializeShots(shots)), currentShotIndex: action.toIndex };
+    }
+
+    case 'REORDER_SHOTS': {
+      if (!state.project) return state;
+      const shots = [...state.project.shots];
+      const [moved] = shots.splice(action.fromIndex, 1);
+      shots.splice(action.toIndex, 0, moved);
+      return {
+        ...state,
+        project: { ...state.project, shots },
+        currentShotIndex: action.toIndex,
+      };
     }
 
     case 'DUPLICATE_SHOT': {
@@ -325,6 +393,9 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
     case 'SET_DSL_TEXT':
       return { ...state, dslText: action.text };
 
+    case 'UPDATE_DSL':
+      return { ...state, dslText: action.text };
+
     case 'PARSE_DSL': {
       const s = pushUndo(state, 'Edit DSL');
       return { ...s, ...rebuildProjectFromDsl(s, s.dslText) };
@@ -333,9 +404,15 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
     // ─── Playback ─────────────────────────────────────────
     case 'PLAY': return { ...state, isPlaying: true };
     case 'PAUSE': return { ...state, isPlaying: false };
+    case 'TOGGLE_PLAY': return { ...state, isPlaying: !state.isPlaying };
+    case 'STOP': return { ...state, isPlaying: false, playbackTime: 0 };
     case 'SEEK': {
       const max = state.project?.shots[state.currentShotIndex]?.duration ?? 0;
-      return { ...state, currentTime: Math.max(0, Math.min(action.time, max)) };
+      return { ...state, playbackTime: Math.max(0, Math.min(action.time, max)) };
+    }
+    case 'SET_PLAYBACK_TIME': {
+      const max = state.project?.shots[state.currentShotIndex]?.duration ?? 0;
+      return { ...state, playbackTime: Math.max(0, Math.min(action.time, max)) };
     }
     case 'SET_SPEED': return { ...state, playbackSpeed: action.speed };
 
@@ -510,7 +587,7 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
 interface EditorContextValue {
   state: EditorState;
   dispatch: React.Dispatch<EditorAction>;
-  currentShot: DslShot | null;
+  currentShot: RendererShot | null;
   totalDuration: number;
 }
 
@@ -534,11 +611,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [state, dispatch, currentShot, totalDuration],
   );
 
-  return (
-    <EditorContext.Provider value={value}>
-      {children}
-    </EditorContext.Provider>
-  );
+  return React.createElement(EditorContext.Provider, { value }, children);
 }
 
 export function useEditor(): EditorContextValue {

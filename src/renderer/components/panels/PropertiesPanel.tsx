@@ -18,6 +18,8 @@ function EmptyState() {
 export default function PropertiesPanel() {
   const { state, currentShot } = useEditor();
   const selectedElement = state.selectedElement;
+  const currentShotDsl = typeof currentShot?.dsl === 'string' ? currentShot.dsl : '';
+  const currentShotLabel = currentShot?.label ?? currentShot?.id ?? 'Untitled';
 
   if (!currentShot) {
     return (
@@ -55,7 +57,7 @@ export default function PropertiesPanel() {
               </div>
               <div className="prop-info-item">
                 <span className="prop-info-label">Label</span>
-                <span className="prop-info-value">{currentShot.label}</span>
+                <span className="prop-info-value">{currentShotLabel}</span>
               </div>
               <div className="prop-info-item">
                 <span className="prop-info-label">Duration</span>
@@ -63,7 +65,7 @@ export default function PropertiesPanel() {
               </div>
               <div className="prop-info-item">
                 <span className="prop-info-label">DSL Length</span>
-                <span className="prop-info-value">{currentShot.dsl.length}</span>
+                <span className="prop-info-value">{currentShotDsl.length}</span>
               </div>
             </div>
           </div>

@@ -57,6 +57,8 @@ const ImageSlot: React.FC<{
 
 const BODY_PARTS = ['head', 'body', 'left_arm', 'right_arm', 'left_leg', 'right_leg', 'face_base'] as const;
 
+type EditableCharacterField = 'name' | 'style' | 'skeletonType' | 'thumbnail' | 'color' | 'description';
+
 // ─── Character Manager ──────────────────────────────────────
 
 const CharacterManager: React.FC = () => {
@@ -106,7 +108,7 @@ const CharacterManager: React.FC = () => {
     dispatch({ type: 'UPDATE_CHARACTER', character: { ...selected, parts } });
   }, [selected, dispatch]);
 
-  const handleFieldChange = useCallback((field: keyof CharacterAsset, value: string) => {
+  const handleFieldChange = useCallback((field: EditableCharacterField, value: string) => {
     if (!selected) return;
     dispatch({ type: 'UPDATE_CHARACTER', character: { ...selected, [field]: value } });
   }, [selected, dispatch]);
@@ -178,7 +180,7 @@ const CharacterManager: React.FC = () => {
               <h4>Description</h4>
               <textarea className="input-text char-detail-desc"
                 value={selected.description || ''}
-                onChange={(e) => handleFieldChange('description' as any, e.target.value)}
+                onChange={(e) => handleFieldChange('description', e.target.value)}
                 placeholder="Character description..." rows={2} />
             </div>
 

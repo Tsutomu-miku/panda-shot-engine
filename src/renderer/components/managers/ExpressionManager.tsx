@@ -57,6 +57,8 @@ const STICKER_PARTS = [
   { key: 'overlayImage', label: '✨ Overlay' },
 ] as const;
 
+type StickerPartKey = (typeof STICKER_PARTS)[number]['key'];
+
 // ─── Expression Manager ─────────────────────────────────────
 
 const ExpressionManager: React.FC = () => {
@@ -99,7 +101,7 @@ const ExpressionManager: React.FC = () => {
     if (selectedExpr === name) setSelectedExpr(null);
   }, [selectedChar, selectedExpr, dispatch]);
 
-  const handleStickerUpload = useCallback((partKey: string, dataUrl: string) => {
+  const handleStickerUpload = useCallback((partKey: StickerPartKey, dataUrl: string) => {
     if (!selectedChar || !selectedExpr || !activeExpr) return;
     const updated: ExpressionSet = { ...activeExpr, [partKey]: dataUrl };
     dispatch({
@@ -110,9 +112,9 @@ const ExpressionManager: React.FC = () => {
     });
   }, [selectedChar, selectedExpr, activeExpr, dispatch]);
 
-  const handleStickerClear = useCallback((partKey: string) => {
+  const handleStickerClear = useCallback((partKey: StickerPartKey) => {
     if (!selectedChar || !selectedExpr || !activeExpr) return;
-    const updated: ExpressionSet = { ...activeExpr, [partKey]: undefined } as any;
+    const updated: ExpressionSet = { ...activeExpr, [partKey]: undefined };
     dispatch({
       type: 'SET_CHARACTER_EXPRESSION',
       characterId: selectedChar.id,
@@ -204,9 +206,9 @@ const ExpressionManager: React.FC = () => {
                     <div className="sticker-group__label">{label}</div>
                     <StickerSlot
                       label={label}
-                      src={(activeExpr as any)[key]}
+                      src={activeExpr[key]}
                       onUpload={(url) => handleStickerUpload(key, url)}
-                      onClear={(activeExpr as any)[key] ? () => handleStickerClear(key) : undefined}
+                      onClear={activeExpr[key] ? () => handleStickerClear(key) : undefined}
                     />
                   </div>
                 ))}

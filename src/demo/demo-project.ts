@@ -430,6 +430,105 @@ export const DEMO_SCENES: SceneAsset[] = [
   },
 ];
 
+export interface SceneRenderPreset {
+  bgGradientStart: string;
+  bgGradientEnd: string;
+  floorColor: string;
+  floorHighlight: string;
+  lightingColor: string;
+  lightingIntensity: number;
+  ambientParticles: boolean;
+}
+
+const SCENE_RENDER_PRESETS: Record<string, SceneRenderPreset> = {
+  inn_interior: {
+    bgGradientStart: '#6d4c41',
+    bgGradientEnd: '#2f1b14',
+    floorColor: '#4e342e',
+    floorHighlight: 'rgba(255, 230, 190, 0.25)',
+    lightingColor: '#ffb74d',
+    lightingIntensity: 0.8,
+    ambientParticles: false,
+  },
+  dark_forest: {
+    bgGradientStart: '#1f3b2d',
+    bgGradientEnd: '#08140d',
+    floorColor: '#10251a',
+    floorHighlight: 'rgba(120, 180, 140, 0.18)',
+    lightingColor: '#8ec5a4',
+    lightingIntensity: 0.35,
+    ambientParticles: true,
+  },
+  mountain_cliff: {
+    bgGradientStart: '#6f889c',
+    bgGradientEnd: '#293847',
+    floorColor: '#44525f',
+    floorHighlight: 'rgba(240, 245, 255, 0.18)',
+    lightingColor: '#d8e6ff',
+    lightingIntensity: 0.3,
+    ambientParticles: true,
+  },
+  throne_room: {
+    bgGradientStart: '#7a2f3f',
+    bgGradientEnd: '#2a0f18',
+    floorColor: '#3a1822',
+    floorHighlight: 'rgba(255, 215, 120, 0.22)',
+    lightingColor: '#ffcc80',
+    lightingIntensity: 0.5,
+    ambientParticles: false,
+  },
+  village_square: {
+    bgGradientStart: '#d2b36c',
+    bgGradientEnd: '#8c6b2f',
+    floorColor: '#9a7b47',
+    floorHighlight: 'rgba(255, 248, 210, 0.2)',
+    lightingColor: '#ffe08a',
+    lightingIntensity: 0.25,
+    ambientParticles: false,
+  },
+  moonlit_lake: {
+    bgGradientStart: '#2b4474',
+    bgGradientEnd: '#0d1528',
+    floorColor: '#18253a',
+    floorHighlight: 'rgba(180, 220, 255, 0.2)',
+    lightingColor: '#9ecbff',
+    lightingIntensity: 0.45,
+    ambientParticles: true,
+  },
+  dungeon: {
+    bgGradientStart: '#4a4a4a',
+    bgGradientEnd: '#171717',
+    floorColor: '#262626',
+    floorHighlight: 'rgba(255, 180, 120, 0.15)',
+    lightingColor: '#ff8a65',
+    lightingIntensity: 0.2,
+    ambientParticles: true,
+  },
+  castle_garden: {
+    bgGradientStart: '#4f8f63',
+    bgGradientEnd: '#1c3d25',
+    floorColor: '#284a30',
+    floorHighlight: 'rgba(210, 255, 220, 0.2)',
+    lightingColor: '#a5d6a7',
+    lightingIntensity: 0.28,
+    ambientParticles: true,
+  },
+};
+
+const DEFAULT_SCENE_RENDER_PRESET: SceneRenderPreset = {
+  bgGradientStart: '#3e2723',
+  bgGradientEnd: '#1a0e0a',
+  floorColor: '#2d1812',
+  floorHighlight: 'rgba(255,255,255,0.16)',
+  lightingColor: '#ffcc80',
+  lightingIntensity: 0.2,
+  ambientParticles: false,
+};
+
+export function getScenePreset(sceneId: string): SceneRenderPreset {
+  return SCENE_RENDER_PRESETS[sceneId] ?? DEFAULT_SCENE_RENDER_PRESET;
+}
+
 // ---------------------------------------------------------------------------
 // FULL_DEMO_DSL – 8-shot story script
 // ---------------------------------------------------------------------------
@@ -452,392 +551,328 @@ export const FULL_DEMO_DSL: string = `
 # Generated demo DSL for the PSE animation editor.
 ###############################################################################
 
-# =========================================================================
-# Shot 1 – Hero Enters the Tavern
-# =========================================================================
 shot "hero_enters_tavern":
-  duration 6s
-  set inn_interior
+  duration: 6s
+  set: "inn_interior"
 
-  placements:
-    merchant at 80%,70% scale 1.0
+  place merchant at right bottom facing left scale 1.0
 
-  timeline:
-    at 0s:
-      camera wide
-      sfx "door_creak"
-      expression merchant neutral
+  at 0s:
+    camera wide
+    merchant expression neutral
+    sfx "door_creak"
 
-    at 0.5s:
-      enter-from hero left to 30%,70%
-      action hero walk_right
-      expression hero neutral
+  at 0.5s:
+    hero enter-from far-left bottom to left bottom facing right action walk_right
+    hero expression neutral
 
-    at 2s:
-      action hero idle
-      camera medium hero
+  at 2s:
+    hero action idle
+    camera medium hero
 
-    at 2.5s:
-      expression hero happy
-      say hero "终于到了……先来壶好茶！"
+  at 2.5s:
+    hero expression happy
+    hero say "终于到了……先来壶好茶！"
 
-    at 4s:
-      expression merchant happy
-      say merchant "客官里边请！本店的龙井刚到货！"
-      action merchant wave
+  at 4s:
+    merchant expression happy
+    merchant say "客官里边请！本店的龙井刚到货！"
+    merchant action wave
 
-    at 5.5s:
-      transition fade 0.5s
+  transition: cut
 
-# =========================================================================
-# Shot 2 – Meets the Sidekick
-# =========================================================================
 shot "meets_sidekick":
-  duration 6s
-  set inn_interior
+  duration: 6s
+  set: "inn_interior"
 
-  placements:
-    hero at 30%,70% scale 1.0
-    merchant at 80%,70% scale 1.0
+  place hero at left bottom facing right scale 1.0
+  place merchant at right bottom facing left scale 1.0
 
-  timeline:
-    at 0s:
-      camera wide
-      expression hero neutral
-      action hero sit_down
+  at 0s:
+    camera wide
+    hero expression neutral
+    hero action idle
 
-    at 0.5s:
-      enter-from sidekick left to 45%,70%
-      action sidekick walk_right
-      sfx "footsteps"
+  at 0.5s:
+    sidekick enter-from far-left bottom to center-left bottom facing right action walk_right
+    sfx "footsteps"
 
-    at 2s:
-      action sidekick idle
-      expression sidekick happy
-      say sidekick "张三哥！好久不见！"
+  at 2s:
+    sidekick action idle
+    sidekick expression happy
+    sidekick say "张三哥！好久不见！"
 
-    at 3s:
-      expression hero happy
-      say hero "李四？你怎么也在这？"
-      action hero wave
+  at 3s:
+    hero expression happy
+    hero say "李四？你怎么也在这？"
+    hero action wave
 
-    at 4.5s:
-      expression sidekick smirk
-      say sidekick "嘿嘿，哪里有热闹，哪里就有我。"
+  at 4.5s:
+    sidekick expression smirk
+    sidekick say "嘿嘿，哪里有热闹，哪里就有我。"
 
-    at 5.5s:
-      transition cut
+  transition: cut
 
-# =========================================================================
-# Shot 3 – Villain Appears
-# =========================================================================
 shot "villain_appears":
-  duration 7s
-  set inn_interior
+  duration: 7s
+  set: "inn_interior"
 
-  placements:
-    hero at 25%,70% scale 1.0
-    sidekick at 40%,70% scale 1.0
-    merchant at 80%,70% scale 1.0
+  place hero at left bottom facing right scale 1.0
+  place sidekick at center-left bottom facing right scale 1.0
+  place merchant at right bottom facing left scale 1.0
 
-  timeline:
-    at 0s:
-      camera wide
-      sfx "thunder_rumble"
-      vfx "screen_shake" duration 0.8s
+  at 0s:
+    camera wide
+    sfx "thunder_rumble"
+    vfx screen_shake
 
-    at 1s:
-      enter-from villain right to 70%,70%
-      action villain walk_right
-      expression villain smirk
+  at 1s:
+    villain enter-from far-right bottom to right bottom facing left action walk_right
+    villain expression smirk
 
-    at 2.5s:
-      action villain idle
-      camera close-up villain
-      expression villain angry
-      say villain "把玉龙珠交出来，否则……"
+  at 2.5s:
+    villain action idle
+    camera close-up villain
+    villain expression angry
+    villain say "把玉龙珠交出来，否则……"
 
-    at 4s:
-      sfx "crowd_gasp"
-      expression merchant surprised
-      expression sidekick surprised
+  at 4s:
+    merchant expression surprised
+    sidekick expression surprised
+    sfx "crowd_gasp"
 
-    at 4.5s:
-      camera medium hero
-      expression hero angry
-      say hero "赤蛟！你休想！"
-      action hero nod
+  at 4.5s:
+    camera medium hero
+    hero expression angry
+    hero say "赤蛟！你休想！"
+    hero action nod
 
-    at 6s:
-      vfx "dramatic_zoom" duration 0.5s
+  transition: cut
 
-    at 6.5s:
-      transition fade 0.5s
-
-# =========================================================================
-# Shot 4 – Confrontation Inside the Tavern
-# =========================================================================
 shot "confrontation":
-  duration 8s
-  set inn_interior
+  duration: 8s
+  set: "inn_interior"
 
-  placements:
-    hero at 30%,70% scale 1.0
-    villain at 65%,70% scale 1.0
-    sidekick at 15%,70% scale 0.9
+  place hero at left bottom facing right scale 1.0
+  place villain at right bottom facing left scale 1.0
+  place sidekick at far-left bottom facing right scale 0.9
 
-  timeline:
-    at 0s:
-      camera wide
-      expression villain angry
-      expression hero angry
-      sfx "tension_strings"
+  at 0s:
+    camera wide
+    villain expression angry
+    hero expression angry
+    sfx "tension_strings"
 
-    at 1s:
-      action villain sword_slash
-      vfx "slash_trail" duration 0.4s
+  at 1s:
+    villain action sword_slash
+    vfx slash_trail
 
-    at 1.8s:
-      action hero sword_slash
-      sfx "sword_clash"
-      vfx "spark_burst" duration 0.3s
+  at 1.8s:
+    hero action sword_slash
+    sfx "sword_clash"
+    vfx spark_burst
 
-    at 3s:
-      expression sidekick surprised
-      say sidekick "小心！"
-      action sidekick jump
+  at 3s:
+    sidekick expression surprised
+    sidekick say "小心！"
+    sidekick action jump
 
-    at 4s:
-      action villain kick
-      move hero to 20%,70% duration 0.4s
-      sfx "impact_heavy"
+  at 4s:
+    villain action kick
+    hero move to far-left bottom 400ms
+    sfx "impact_heavy"
 
-    at 5s:
-      expression hero sad
-      say hero "可恶……"
+  at 5s:
+    hero expression sad
+    hero say "可恶……"
 
-    at 5.5s:
-      expression villain smirk
-      say villain "就这点本事？"
+  at 5.5s:
+    villain expression smirk
+    villain say "就这点本事？"
 
-    at 7s:
-      sfx "gong"
-      vfx "flash_white" duration 0.3s
+  transition: cut
 
-    at 7.5s:
-      transition fade 0.5s
-
-# =========================================================================
-# Shot 5 – Elder Intervenes
-# =========================================================================
 shot "elder_intervenes":
-  duration 7s
-  set village_square
+  duration: 7s
+  set: "village_square"
 
-  placements:
-    hero at 25%,70% scale 1.0
-    villain at 65%,70% scale 1.0
-    sidekick at 15%,70% scale 0.9
+  place hero at left bottom facing right scale 1.0
+  place villain at right bottom facing left scale 1.0
+  place sidekick at far-left bottom facing right scale 0.9
 
-  timeline:
-    at 0s:
-      camera wide
-      sfx "wind_gust"
-      expression hero sad
-      expression villain smirk
+  at 0s:
+    camera wide
+    sfx "wind_gust"
+    hero expression sad
+    villain expression smirk
 
-    at 1s:
-      enter-from elder left to 45%,65%
-      action elder walk_right
-      sfx "mystical_chime"
-      vfx "aura_glow" duration 1.5s
+  at 1s:
+    elder enter-from far-left bottom to center bottom facing right action walk_right
+    sfx "mystical_chime"
+    vfx aura_glow at elder
 
-    at 2.5s:
-      action elder idle
-      camera close-up elder
-      expression elder angry
-      say elder "住手！老夫在此，谁敢造次！"
-      action elder cast_spell
+  at 2.5s:
+    elder action idle
+    camera close-up elder
+    elder expression angry
+    elder say "住手！老夫在此，谁敢造次！"
+    elder action cast_spell
 
-    at 4s:
-      vfx "shockwave" duration 0.6s
-      sfx "energy_blast"
-      move villain to 85%,70% duration 0.5s
-      expression villain surprised
+  at 4s:
+    vfx shockwave
+    sfx "energy_blast"
+    villain move to far-right bottom 500ms
+    villain expression surprised
 
-    at 5s:
-      say villain "白长老……哼，走着瞧！"
-      expression villain angry
+  at 5s:
+    villain say "白长老……哼，走着瞧！"
+    villain expression angry
 
-    at 6s:
-      action villain walk_right
-      move villain to 110%,70% duration 0.8s
-      sfx "running_away"
+  at 6s:
+    villain action walk_right
+    villain move to far-right bottom 800ms
+    sfx "running_away"
 
-    at 6.5s:
-      transition wipe_left 0.5s
+  transition: wipe-left 500ms
 
-# =========================================================================
-# Shot 6 – Chase Into the Forest
-# =========================================================================
 shot "forest_chase":
-  duration 6s
-  set dark_forest
+  duration: 7s
+  set: "dark_forest"
 
-  placements:
-    villain at 75%,70% scale 1.0
+  place villain at right bottom facing left scale 1.0
 
-  timeline:
-    at 0s:
-      camera wide
-      action villain walk_right
-      move villain to 85%,70% duration 2s
-      sfx "forest_ambience"
+  at 0s:
+    camera wide
+    villain action walk_right
+    villain move to far-right bottom 2s
+    sfx "forest_ambience"
 
-    at 0.5s:
-      enter-from hero left to 25%,70%
-      action hero walk_right
-      move hero to 55%,70% duration 2.5s
+  at 0.5s:
+    hero enter-from far-left bottom to left bottom facing right action walk_right
+    hero move to center bottom 2.5s
 
-    at 1s:
-      enter-from sidekick left to 10%,70%
-      action sidekick walk_right
-      move sidekick to 40%,70% duration 2.5s
+  at 1s:
+    sidekick enter-from far-left bottom to center-left bottom facing right action walk_right
+    sidekick move to center-left bottom 2.5s
 
-    at 2.5s:
-      enter-from beast left to 5%,65%
-      action beast walk_right
-      move beast to 35%,65% duration 1.5s
-      sfx "panther_growl"
+  at 2.5s:
+    beast enter-from far-left bottom to left-third bottom facing right action walk_right
+    beast move to center-left bottom 1.5s
+    sfx "panther_growl"
 
-    at 3.5s:
-      camera medium hero
-      expression hero angry
-      say hero "别让他跑了！"
+  at 3.5s:
+    camera medium hero
+    hero expression angry
+    hero say "别让他跑了！"
 
-    at 4.5s:
-      expression sidekick happy
-      say sidekick "小黑比我们快——上啊！"
-      action beast jump
+  at 4.5s:
+    sidekick expression happy
+    sidekick say "小黑比我们快——上啊！"
+    beast action jump
 
-    at 5.5s:
-      transition fade 0.5s
+  transition: cut
 
-# =========================================================================
-# Shot 7 – Battle on the Cliff
-# =========================================================================
 shot "cliff_battle":
-  duration 8s
-  set mountain_cliff
+  duration: 8s
+  set: "mountain_cliff"
 
-  placements:
-    hero at 30%,65% scale 1.0
-    villain at 65%,65% scale 1.0
+  place hero at left bottom facing right scale 1.0
+  place villain at right bottom facing left scale 1.0
 
-  timeline:
-    at 0s:
-      camera wide
-      sfx "wind_howl"
-      expression hero angry
-      expression villain angry
+  at 0s:
+    camera wide
+    sfx "wind_howl"
+    hero expression angry
+    villain expression angry
 
-    at 0.5s:
-      action hero sword_slash
-      action villain sword_slash
-      sfx "sword_clash"
-      vfx "spark_burst" duration 0.3s
+  at 0.5s:
+    hero action sword_slash
+    villain action sword_slash
+    sfx "sword_clash"
+    vfx spark_burst
 
-    at 1.5s:
-      action villain kick
-      action hero jump
-      sfx "whoosh"
+  at 1.5s:
+    villain action kick
+    hero action jump
+    sfx "whoosh"
 
-    at 2.5s:
-      camera close-up hero
-      action hero punch
-      sfx "impact_heavy"
-      vfx "impact_ring" duration 0.4s
+  at 2.5s:
+    camera close-up hero
+    hero action punch
+    sfx "impact_heavy"
+    vfx impact_ring
 
-    at 3.5s:
-      move villain to 75%,65% duration 0.3s
-      expression villain surprised
-      say villain "不可能……"
+  at 3.5s:
+    villain move to right-third bottom 300ms
+    villain expression surprised
+    villain say "不可能……"
 
-    at 4.5s:
-      enter-from princess right to 85%,60%
-      action princess cast_spell
-      vfx "moonbeam" duration 1s
-      sfx "mystical_chime"
-      expression princess neutral
+  at 4.5s:
+    princess enter-from far-right bottom to far-right bottom facing left action cast_spell
+    vfx moonbeam at princess
+    sfx "mystical_chime"
+    princess expression neutral
 
-    at 5.5s:
-      camera wide
-      say princess "够了。月灵在此，恩怨到此为止。"
-      expression princess angry
+  at 5.5s:
+    camera wide
+    princess say "够了。月灵在此，恩怨到此为止。"
+    princess expression angry
 
-    at 6.5s:
-      expression villain sad
-      action villain shake_head
-      say villain "你们……赢了。"
+  at 6.5s:
+    villain expression sad
+    villain action shake_head
+    villain say "你们……赢了。"
 
-    at 7.5s:
-      transition fade 0.5s
+  transition: cut
 
-# =========================================================================
-# Shot 8 – Resolution at Moonlit Lake
-# =========================================================================
 shot "moonlit_resolution":
-  duration 8s
-  set moonlit_lake
+  duration: 8s
+  set: "moonlit_lake"
 
-  placements:
-    hero at 30%,70% scale 1.0
-    sidekick at 45%,72% scale 0.95
-    princess at 55%,68% scale 1.0
-    elder at 20%,68% scale 1.0
+  place hero at left bottom facing right scale 1.0
+  place sidekick at center-left bottom facing right scale 0.95
+  place princess at center-right bottom facing left scale 1.0
+  place elder at left-third bottom facing right scale 1.0
 
-  timeline:
-    at 0s:
-      camera wide
-      sfx "gentle_waves"
-      expression hero neutral
-      expression sidekick happy
-      expression princess neutral
-      expression elder neutral
+  at 0s:
+    camera wide
+    sfx "gentle_waves"
+    hero expression neutral
+    sidekick expression happy
+    princess expression neutral
+    elder expression neutral
 
-    at 1s:
-      camera medium hero
-      expression hero happy
-      say hero "终于结束了……多谢各位。"
-      action hero bow
+  at 1s:
+    camera medium hero
+    hero expression happy
+    hero say "终于结束了……多谢各位。"
+    hero action bow
 
-    at 3s:
-      expression elder happy
-      say elder "年轻人，记住：真正的力量不在剑上。"
-      action elder nod
+  at 3s:
+    elder expression happy
+    elder say "年轻人，记住：真正的力量不在剑上。"
+    elder action nod
 
-    at 4.5s:
-      expression sidekick happy
-      say sidekick "说得好！那……咱们去吃夜宵吧？"
-      action sidekick wave
+  at 4.5s:
+    sidekick expression happy
+    sidekick say "说得好！那……咱们去吃夜宵吧？"
+    sidekick action wave
 
-    at 5.5s:
-      expression princess smirk
-      say princess "你就知道吃。"
+  at 5.5s:
+    princess expression smirk
+    princess say "你就知道吃。"
 
-    at 6.5s:
-      expression hero happy
-      expression sidekick happy
-      expression princess happy
-      expression elder happy
+  at 6.5s:
+    hero expression happy
+    sidekick expression happy
+    princess expression happy
+    elder expression happy
 
-    at 7s:
-      camera wide
-      vfx "sparkle_overlay" duration 1s
-      sfx "ending_chime"
+  at 7s:
+    camera wide
+    vfx sparkle_overlay
+    sfx "ending_chime"
 
-    at 7.5s:
-      transition fade 0.5s
-
+  transition: cut
 # === END ===
 `;

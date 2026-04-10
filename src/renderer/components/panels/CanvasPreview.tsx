@@ -7,6 +7,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditor } from '../../hooks/useEditorState';
 import { getScenePreset, SceneRenderPreset } from '../../../demo/demo-project';
+import type { ActionCommand, CameraCommand, EnterCommand, ExpressionCommand, MoveCommand, PlaceCommand, Position, SayCommand, Shot } from '../../../core/dsl/types';
 
 import './CanvasPreview.css';
 
@@ -34,37 +35,119 @@ interface CameraRenderState {
   panY: number;
 }
 
-function parseSceneId(dsl: string): string {
-  return dsl.match(/^scene\s+([\w-]+)/m)?.[1] ?? 'tavern_interior';
+function getShotDsl(shot: { dsl?: string } | null | undefined): string {
+  return typeof shot?.dsl === 'string' ? shot.dsl : '';
 }
 
-function parseCharacters(dsl: string): string[] {
-  return Array.from(
-    new Set(
-      Array.from(dsl.matchAll(/(hero|villain|sidekick|elder|beast)/g)).map((m) => m[1]),
-    ),
-  );
+function resolveSceneId(shot: Pick<Shot, 'set'> & { dsl?: string }): string {
+  if (typeof shot.set === 'string' && shot.set.trim()) {
+    return shot.set;
+  }
+  return getShotDsl(shot).match(/^scene\s+([\w-]+)/m)?.[1] ?? 'inn_interior';
 }
 
-function computeCharactersAtTime(shot: { dsl: string }, _time: number): CharacterRenderState[] {
-  const names = parseCharacters(shot.dsl);
-  return names.map((name, index) => ({
-    id: name,
-    x: (index + 1) / (names.length + 1),
-    y: 0.65,
-    facing: index % 2 === 0 ? 'right' : 'left',
-    scale: 1,
+function positionToCoords(position: Position): { x: number; y: number } {
+  const semanticMap: Record<string, number> = {
+    'far-left': 0.08,
+    'left-third': 0.22,
+    left: 0.3,
+    'center-left': 0.4,
+    center: 0.5,
+    'center-right': 0.6,
+    right: 0.7,
+    'right-third': 0.8,
+    'far-right': 0.92,
+  };
+  const verticalMap: Record<string, number> = {
+    top: 0.3,
+    middle: 0.52,
+    bottom: 0.7,
+  };
+
+  return {
+    x: position.x ?? semanticMap[position.semantic ?? 'center'] ?? 0.5,
+    y: position.y ?? verticalMap[position.vertical ?? 'bottom'] ?? 0.7,
+  };
+}
+
+function ensureCharacterState(map: Map<string, CharacterRenderState>, placement: PlaceCommand) {
+  const coords = positionToCoords(placement.position);
+  map.set(placement.character, {
+    id: placement.character,
+    x: coords.x,
+    y: coords.y,
+    facing: placement.facing ?? 'right',
+    scale: placement.scale ?? 1,
     expression: 'neutral',
     action: null,
     dialogueText: null,
     dialogueVoice: null,
-  }));
+  });
 }
 
-function computeCameraAtTime(shot: { dsl: string }, _time: number): CameraRenderState {
-  const cameraType = shot.dsl.match(/camera\s+([\w-]+)/)?.[1] ?? 'wide';
+function computeCharactersAtTime(shot: Pick<Shot, 'placements' | 'timeline'>, time: number): CharacterRenderState[] {
+  const states = new Map<string, CharacterRenderState>();
+
+  for (const placement of shot.placements ?? []) {
+    ensureCharacterState(states, placement);
+  }
+
+  for (const event of shot.timeline ?? []) {
+    if (event.time > time) break;
+    for (const command of event.commands) {
+      if (!('character' in command)) continue;
+
+      const current = states.get(command.character) ?? {
+        id: command.character,
+        x: 0.5,
+        y: 0.7,
+        facing: 'right' as const,
+        scale: 1,
+        expression: 'neutral',
+        action: null,
+        dialogueText: null,
+        dialogueVoice: null,
+      };
+
+      switch (command.type) {
+        case 'expression':
+          current.expression = (command as ExpressionCommand).expression;
+          break;
+        case 'action':
+          current.action = (command as ActionCommand).action;
+          break;
+        case 'say':
+          current.dialogueText = (command as SayCommand).text;
+          current.dialogueVoice = (command as SayCommand).voice ?? null;
+          break;
+        case 'enter': {
+          const enter = command as EnterCommand;
+          const coords = positionToCoords(enter.to);
+          current.x = coords.x;
+          current.y = coords.y;
+          current.facing = enter.facing ?? current.facing;
+          if (enter.action) current.action = enter.action;
+          break;
+        }
+        case 'move': {
+          const move = command as MoveCommand;
+          const coords = positionToCoords(move.to);
+          current.x = coords.x;
+          current.y = coords.y;
+          break;
+        }
+      }
+
+      states.set(command.character, current);
+    }
+  }
+
+  return Array.from(states.values());
+}
+
+function computeCameraAtTime(shot: Pick<Shot, 'timeline'>, time: number): CameraRenderState {
   const cam: CameraRenderState = {
-    type: cameraType,
+    type: 'wide',
     target: null,
     zoom: 1,
     shakeIntensity: 0,
@@ -73,14 +156,23 @@ function computeCameraAtTime(shot: { dsl: string }, _time: number): CameraRender
     panY: 0,
   };
 
-  if (cameraType === 'medium') cam.zoom = 1.3;
-    return {
-    ...cam,
-    zoom:
-      cameraType === 'close-up' ? 1.8 :
-      cameraType === 'extreme-close-up' ? 2.5 :
-      cameraType === 'medium' ? 1.3 : 1,
-  };
+  for (const event of shot.timeline ?? []) {
+    if (event.time > time) break;
+    for (const command of event.commands) {
+      if (command.type !== 'camera') continue;
+      const camera = command as CameraCommand;
+      cam.type = camera.cameraType;
+      cam.target = camera.target ?? null;
+      cam.shakeIntensity = camera.motion === 'shake' ? camera.intensity ?? 4 : 0;
+      cam.zoom = (
+        camera.cameraType === 'close-up' ? 1.8 :
+        camera.cameraType === 'extreme-close-up' ? 2.5 :
+        camera.cameraType === 'medium' ? 1.3 : 1
+      );
+    }
+  }
+
+  return cam;
 }
 
 // ─── Background Rendering ───────────────────────────────────
@@ -769,7 +861,7 @@ function drawHUD(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
-  shot: { id: string; duration?: number; dsl: string },
+  shot: { id: string; duration?: number; dsl?: string },
   time: number,
   camera: CameraRenderState,
 ) {
@@ -783,7 +875,7 @@ function drawHUD(
     `Shot: ${shot.id}`,
     `Time: ${time.toFixed(2)}s / ${shot.duration ?? 0}s`,
     `Camera: ${camera.type}${camera.target ? ' -> ' + camera.target : ''}`,
-    `Set: ${parseSceneId(shot.dsl)}`,
+    `Set: ${resolveSceneId(shot as Shot & { dsl?: string })}`,
   ];
   for (let i = 0; i < info.length; i++) {
     ctx.fillText(info[i], 10, 10 + i * 14);
@@ -869,7 +961,7 @@ const CanvasPreview: React.FC = () => {
     }
 
     // Draw background
-    drawBackground(ctx, W, H, parseSceneId(currentShot.dsl), time);
+    drawBackground(ctx, W, H, resolveSceneId(currentShot), time);
 
     // Draw characters sorted by y position (back to front)
     const sorted = [...characters].sort((a, b) => a.y - b.y);
@@ -904,12 +996,12 @@ const CanvasPreview: React.FC = () => {
       const rect = wrapper.getBoundingClientRect();
       const maxW = rect.width - 24;
       const maxH = rect.height - 24;
-      const zoom = state.zoom;
+      const zoomScale = Math.max(0.25, state.zoom / 100);
 
-      let w = maxW * zoom;
+      let w = maxW * zoomScale;
       let h = w * (9 / 16);
-      if (h > maxH * zoom) {
-        h = maxH * zoom;
+      if (h > maxH * zoomScale) {
+        h = maxH * zoomScale;
         w = h * (16 / 9);
       }
 

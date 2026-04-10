@@ -102,7 +102,7 @@ const DslEditor: React.FC = () => {
   }, []);
 
   return (
-    <div className="dsl-editor">
+    <div className="panel dsl-editor">
       <div className="panel-header">
         <span className="panel-header__title">DSL Editor</span>
       </div>

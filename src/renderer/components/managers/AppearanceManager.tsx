@@ -5,7 +5,12 @@
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { useEditor } from '../../hooks/useEditorState';
-import type { AppearanceItem, AppearancePreset, AppearanceCategoryType } from '../../../core/project/types';
+import type {
+  AppearanceItem,
+  AppearancePreset,
+  AppearanceCategoryType,
+  CharacterAsset,
+} from '../../../core/project/types';
 import { APPEARANCE_CATEGORIES } from '../../../core/project/types';
 import './AppearanceManager.css';
 
@@ -142,7 +147,7 @@ interface ItemFormData {
   category: AppearanceCategoryType;
   image: string;
   zIndex: number;
-  tint: string;
+  tint?: string;
 }
 
 const ItemForm: React.FC<{
@@ -160,7 +165,7 @@ const ItemForm: React.FC<{
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSubmit({ name: name.trim(), category, image, zIndex, tint: tint || undefined } as ItemFormData);
+    onSubmit({ name: name.trim(), category, image, zIndex, tint: tint || undefined });
   };
 
   return (
@@ -227,16 +232,16 @@ const AppearanceManager: React.FC = () => {
   const [newPresetName, setNewPresetName] = useState('');
 
   // Get characters from state
-  const characters = state.project?.characters ?? [];
+  const characters: CharacterAsset[] = state.project?.characters ?? [];
   const selectedChar = useMemo(
-    () => characters.find((c: any) => c.id === selectedCharId) ?? characters[0] ?? null,
+    () => characters.find((c) => c.id === selectedCharId) ?? characters[0] ?? null,
     [characters, selectedCharId],
   );
 
   // Appearance items for selected character
-  const allItems: AppearanceItem[] = (selectedChar as any)?.appearanceItems ?? [];
-  const presets: AppearancePreset[] = (selectedChar as any)?.appearancePresets ?? [];
-  const activePresetId: string | undefined = (selectedChar as any)?.activePresetId;
+  const allItems: AppearanceItem[] = selectedChar?.appearanceItems ?? [];
+  const presets: AppearancePreset[] = selectedChar?.appearancePresets ?? [];
+  const activePresetId = selectedChar?.activePresetId;
 
   // Active preset's item IDs
   const activePreset = presets.find((p) => p.id === activePresetId);
@@ -271,7 +276,7 @@ const AppearanceManager: React.FC = () => {
       zIndex: data.zIndex,
       tint: data.tint,
     };
-    dispatch({ type: 'ADD_APPEARANCE_ITEM', characterId: charId, item } as any);
+    dispatch({ type: 'ADD_APPEARANCE_ITEM', characterId: charId, item });
     setShowAddForm(false);
   }, [charId, dispatch]);
 
@@ -285,13 +290,13 @@ const AppearanceManager: React.FC = () => {
       zIndex: data.zIndex,
       tint: data.tint,
     };
-    dispatch({ type: 'UPDATE_APPEARANCE_ITEM', characterId: charId, item: updated } as any);
+    dispatch({ type: 'UPDATE_APPEARANCE_ITEM', characterId: charId, item: updated });
     setEditingItem(null);
   }, [charId, editingItem, dispatch]);
 
   const handleDeleteItem = useCallback((itemId: string) => {
     if (!charId) return;
-    dispatch({ type: 'REMOVE_APPEARANCE_ITEM', characterId: charId, itemId } as any);
+    dispatch({ type: 'REMOVE_APPEARANCE_ITEM', characterId: charId, itemId });
   }, [charId, dispatch]);
 
   const handleToggleEquip = useCallback((itemId: string) => {
@@ -303,12 +308,12 @@ const AppearanceManager: React.FC = () => {
       type: 'UPDATE_APPEARANCE_PRESET',
       characterId: charId,
       preset: { ...activePreset!, itemIds: newIds },
-    } as any);
+    });
   }, [charId, activePresetId, activePreset, equippedIds, dispatch]);
 
   const handleActivatePreset = useCallback((presetId: string) => {
     if (!charId) return;
-    dispatch({ type: 'SET_ACTIVE_PRESET', characterId: charId, presetId } as any);
+    dispatch({ type: 'SET_ACTIVE_PRESET', characterId: charId, presetId });
   }, [charId, dispatch]);
 
   const handleAddPreset = useCallback(() => {
@@ -318,14 +323,14 @@ const AppearanceManager: React.FC = () => {
       name: newPresetName.trim(),
       itemIds: [],
     };
-    dispatch({ type: 'ADD_APPEARANCE_PRESET', characterId: charId, preset } as any);
+    dispatch({ type: 'ADD_APPEARANCE_PRESET', characterId: charId, preset });
     setNewPresetName('');
     setShowAddPreset(false);
   }, [charId, newPresetName, dispatch]);
 
   const handleDeletePreset = useCallback((presetId: string) => {
     if (!charId) return;
-    dispatch({ type: 'REMOVE_APPEARANCE_PRESET', characterId: charId, presetId } as any);
+    dispatch({ type: 'REMOVE_APPEARANCE_PRESET', characterId: charId, presetId });
   }, [charId, dispatch]);
 
   // ─── Render ─────────────────────────────────────────────
@@ -344,7 +349,7 @@ const AppearanceManager: React.FC = () => {
       <div className="appearance-char-selector">
         <label className="appearance-char-selector__label">Character:</label>
         <div className="appearance-char-selector__list">
-          {characters.map((c: any) => (
+          {characters.map((c) => (
             <button key={c.id}
               className={`appearance-char-chip ${c.id === selectedChar?.id ? 'active' : ''}`}
               style={{ '--chip-color': c.color || '#666' } as React.CSSProperties}

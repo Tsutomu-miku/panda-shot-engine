@@ -13,6 +13,8 @@ function genSceneId(): string {
   return `scene_${Date.now().toString(36)}_${(++_sid).toString(36)}`;
 }
 
+type EditableSceneField = 'name' | 'filePath' | 'thumbnail' | 'backgroundColor' | 'description';
+
 const SceneManager: React.FC = () => {
   const { state, dispatch } = useEditor();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -55,7 +57,7 @@ const SceneManager: React.FC = () => {
     if (selectedId === id) setSelectedId(null);
   }, [selectedId, dispatch]);
 
-  const handleUpdateField = useCallback((field: keyof SceneAsset, value: string) => {
+  const handleUpdateField = useCallback((field: EditableSceneField, value: string) => {
     if (!selected) return;
     dispatch({ type: 'UPDATE_SCENE', scene: { ...selected, [field]: value } });
   }, [selected, dispatch]);
@@ -156,7 +158,7 @@ const SceneManager: React.FC = () => {
               <h4>Description</h4>
               <textarea className="input-text scene-detail-desc"
                 value={selected.description || ''}
-                onChange={(e) => handleUpdateField('description' as any, e.target.value)}
+                onChange={(e) => handleUpdateField('description', e.target.value)}
                 placeholder="Scene description..." rows={3} />
             </div>
           </>

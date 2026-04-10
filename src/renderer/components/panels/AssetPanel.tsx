@@ -6,6 +6,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useEditor } from '../../hooks/useEditorState';
 import type { CharacterAsset, SceneAsset } from '../../../core/project/types';
+import './AssetPanel.css';
 
 // ─── Character Thumbnail ────────────────────────────────────
 

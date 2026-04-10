@@ -14,8 +14,25 @@ import React, {
 import { useEditor } from '../../hooks/useEditorState';
 import type { DslShot } from '../../../core/project/types';
 import { getScenePreset } from '../../../demo/demo-project';
+import type { CameraCommand, PlaceCommand } from '../../../core/dsl/types';
 
 import './ShotList.css';
+
+function getSceneId(shot: DslShot): string {
+  return shot.set || 'inn_interior';
+}
+
+function getPlacedCharacters(shot: DslShot): string[] {
+  return Array.from(new Set((shot.placements ?? []).map((placement: PlaceCommand) => placement.character)));
+}
+
+function getPrimaryCameraType(shot: DslShot): string {
+  for (const event of shot.timeline ?? []) {
+    const camera = event.commands.find((command) => command.type === 'camera') as CameraCommand | undefined;
+    if (camera) return camera.cameraType;
+  }
+  return 'wide';
+}
 
 // ─── Mini Thumbnail Renderer ────────────────────────────────
 
@@ -42,8 +59,7 @@ function ShotThumbnail({
     ctx.scale(dpr, dpr);
 
     // Draw scene background
-    const sceneMatch = shot.dsl.match(/^scene\s+([\w-]+)/m);
-    const sceneId = sceneMatch?.[1] ?? 'tavern_interior';
+    const sceneId = getSceneId(shot);
     const preset = getScenePreset(sceneId);
     const bgGradientStart = preset.bgGradientStart || '#3e2723';
     const bgGradientEnd = preset.bgGradientEnd || '#1a0e0a';
@@ -64,13 +80,7 @@ function ShotThumbnail({
 
     // Draw mini characters as colored circles
     const charColors = ['#4caf50', '#f44336', '#2196f3', '#9c27b0', '#ff9800'];
-    const characterNames = Array.from(
-      new Set(
-        Array.from(shot.dsl.matchAll(/\b(hero|villain|sidekick|elder|beast)\b/g)).map(
-          (match) => match[1],
-        ),
-      ),
-    );
+    const characterNames = getPlacedCharacters(shot);
 
     characterNames.forEach((name, i) => {
       const cx = ((i + 1) / (characterNames.length + 1)) * width;
@@ -93,8 +103,7 @@ function ShotThumbnail({
     });
 
     // Camera indicator
-    const cameraMatch = shot.dsl.match(/\bcamera\s+([\w-]+)/);
-    const cameraType = cameraMatch?.[1] ?? 'wide';
+    const cameraType = getPrimaryCameraType(shot);
 
     // Show camera frame overlay for non-wide
     if (cameraType !== 'wide') {
@@ -222,6 +231,9 @@ function ShotListItem({
   onDragOver: () => void;
   onDrop: () => void;
 }) {
+  const shotLabel = shot.label ?? shot.id;
+  const characterNames = getPlacedCharacters(shot);
+
   return (
     <div
       className={`shotlist-item ${isActive ? 'shotlist-item--active' : ''} ${isDragOver ? 'shotlist-item--dragover' : ''}`}
@@ -253,16 +265,10 @@ function ShotListItem({
         <div className="shotlist-item-meta">
           <span className="shotlist-item-duration">{shot.duration}s</span>
           <span className="shotlist-item-sep">|</span>
-          <span className="shotlist-item-set">{shot.label}</span>
+          <span className="shotlist-item-set">{shotLabel}</span>
         </div>
         <div className="shotlist-item-chars">
-          {Array.from(
-            new Set(
-              Array.from(shot.dsl.matchAll(/\b(hero|villain|sidekick|elder|beast)\b/g)).map(
-                (match) => match[1],
-              ),
-            ),
-          ).map((character) => (
+          {characterNames.map((character) => (
             <span key={character} className="shotlist-item-char-tag">
               {character}
             </span>
@@ -294,8 +300,9 @@ export default function ShotList() {
       .filter(
         ({ s }) =>
           s.id.toLowerCase().includes(q) ||
-          s.label.toLowerCase().includes(q) ||
-          s.dsl.toLowerCase().includes(q),
+          (s.label ?? s.id).toLowerCase().includes(q) ||
+          getSceneId(s).toLowerCase().includes(q) ||
+          getPlacedCharacters(s).some((character) => character.toLowerCase().includes(q)),
       )
       .map(({ i }) => i);
   }, [shots, searchQuery]);

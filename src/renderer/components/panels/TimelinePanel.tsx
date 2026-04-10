@@ -7,6 +7,14 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useEditor } from '../../hooks/useEditorState';
 import type { DslShot } from '../../../core/project/types';
+import type {
+  ActionCommand,
+  CameraCommand,
+  ExpressionCommand,
+  SayCommand,
+  SfxCommand,
+  VfxCommand,
+} from '../../../core/dsl/types';
 
 import './TimelinePanel.css';
 
@@ -15,6 +23,14 @@ import './TimelinePanel.css';
 const RULER_HEIGHT = 28;
 const TRACK_HEIGHT = 36;
 const PX_PER_SEC_BASE = 120;
+
+function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
 // ─── Flatten shot timeline into renderable tracks ───────────
 
@@ -37,29 +53,113 @@ interface Track {
 }
 
 function buildTracksFromShot(shot: DslShot): Track[] {
-  const lines = shot.dsl
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const trackMap = new Map<string, Track>();
 
-  const events: TrackEvent[] = lines.map((line, index) => ({
-    id: `dsl_${shot.id}_${index}`,
-    trackId: 'track_dsl',
-    type: line.startsWith('camera') ? 'camera' : 'action',
-    label: line.length > 24 ? `${line.slice(0, 24)}...` : line,
-    startTime: Math.min(index * 0.6, Math.max((shot.duration ?? 0) - 0.4, 0)),
-    duration: 0.5,
-  }));
+  const ensureTrack = (id: string, name: string, type: Track['type'], color: string) => {
+    if (!trackMap.has(id)) {
+      trackMap.set(id, { id, name, type, color, events: [] });
+    }
+    return trackMap.get(id)!;
+  };
 
-  return [
-    {
-      id: 'track_dsl',
-      name: 'DSL Events',
-      color: '#4caf50',
-      type: 'character',
-      events,
-    },
-  ];
+  for (const event of shot.timeline ?? []) {
+    for (const command of event.commands) {
+      let track: Track;
+      let trackEvent: TrackEvent | null = null;
+
+      switch (command.type) {
+        case 'camera': {
+          const camera = command as CameraCommand;
+          track = ensureTrack('track_camera', 'Camera', 'camera', '#ab47bc');
+          trackEvent = {
+            id: `${shot.id}_camera_${event.time}_${track.events.length}`,
+            trackId: track.id,
+            type: 'camera',
+            label: camera.target ? `${camera.cameraType} -> ${camera.target}` : camera.cameraType,
+            startTime: event.time,
+            duration: camera.duration ?? 0.5,
+          };
+          break;
+        }
+        case 'action': {
+          const action = command as ActionCommand;
+          track = ensureTrack(`char_${action.character}`, action.character, 'character', '#4caf50');
+          trackEvent = {
+            id: `${shot.id}_action_${action.character}_${event.time}_${track.events.length}`,
+            trackId: track.id,
+            type: 'action',
+            label: action.action,
+            startTime: event.time,
+            duration: 0.6,
+            character: action.character,
+          };
+          break;
+        }
+        case 'expression': {
+          const expression = command as ExpressionCommand;
+          track = ensureTrack(`char_${expression.character}`, expression.character, 'character', '#42a5f5');
+          trackEvent = {
+            id: `${shot.id}_expression_${expression.character}_${event.time}_${track.events.length}`,
+            trackId: track.id,
+            type: 'expression',
+            label: expression.expression,
+            startTime: event.time,
+            duration: 0.6,
+            character: expression.character,
+          };
+          break;
+        }
+        case 'say': {
+          const say = command as SayCommand;
+          track = ensureTrack(`char_${say.character}`, say.character, 'character', '#7e57c2');
+          trackEvent = {
+            id: `${shot.id}_say_${say.character}_${event.time}_${track.events.length}`,
+            trackId: track.id,
+            type: 'say',
+            label: say.text,
+            startTime: event.time,
+            duration: 1.2,
+            character: say.character,
+          };
+          break;
+        }
+        case 'sfx': {
+          const sfx = command as SfxCommand;
+          track = ensureTrack('track_sfx', 'SFX', 'sfx', '#ffa726');
+          trackEvent = {
+            id: `${shot.id}_sfx_${event.time}_${track.events.length}`,
+            trackId: track.id,
+            type: 'sfx',
+            label: sfx.sound,
+            startTime: event.time,
+            duration: 0.4,
+          };
+          break;
+        }
+        case 'vfx': {
+          const vfx = command as VfxCommand;
+          track = ensureTrack('track_vfx', 'VFX', 'sfx', '#ef5350');
+          trackEvent = {
+            id: `${shot.id}_vfx_${event.time}_${track.events.length}`,
+            trackId: track.id,
+            type: 'vfx',
+            label: vfx.effect,
+            startTime: event.time,
+            duration: 0.5,
+          };
+          break;
+        }
+        default:
+          trackEvent = null;
+      }
+
+      if (trackEvent) {
+        track.events.push(trackEvent);
+      }
+    }
+  }
+
+  return Array.from(trackMap.values());
 }
 
 // ─── Ruler Component ────────────────────────────────────────
@@ -73,6 +173,9 @@ interface RulerProps {
 
 const Ruler: React.FC<RulerProps> = ({ duration, pxPerSec, currentTime, onSeek }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const safeDuration = Math.max(0, finiteOr(duration, 0));
+  const safePxPerSec = Math.max(1, finiteOr(pxPerSec, PX_PER_SEC_BASE));
+  const safeCurrentTime = clamp(finiteOr(currentTime, 0), 0, safeDuration);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -80,7 +183,7 @@ const Ruler: React.FC<RulerProps> = ({ duration, pxPerSec, currentTime, onSeek }
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const W = Math.max(duration * pxPerSec + 20, canvas.parentElement?.clientWidth ?? 600);
+    const W = Math.max(safeDuration * safePxPerSec + 20, canvas.parentElement?.clientWidth ?? 600);
     canvas.width = W;
     canvas.height = RULER_HEIGHT;
 
@@ -89,9 +192,9 @@ const Ruler: React.FC<RulerProps> = ({ duration, pxPerSec, currentTime, onSeek }
     ctx.fillRect(0, 0, W, RULER_HEIGHT);
 
     // Tick marks
-    const step = pxPerSec >= 80 ? 0.5 : 1;
-    for (let t = 0; t <= duration + 0.01; t += step) {
-      const x = t * pxPerSec;
+    const step = safePxPerSec >= 80 ? 0.5 : 1;
+    for (let t = 0; t <= safeDuration + 0.01; t += step) {
+      const x = t * safePxPerSec;
       const isMajor = Math.abs(t - Math.round(t)) < 0.01;
       ctx.strokeStyle = isMajor ? '#555' : '#333';
       ctx.lineWidth = 1;
@@ -109,7 +212,7 @@ const Ruler: React.FC<RulerProps> = ({ duration, pxPerSec, currentTime, onSeek }
     }
 
     // Playhead marker on ruler
-    const phX = currentTime * pxPerSec;
+    const phX = safeCurrentTime * safePxPerSec;
     ctx.fillStyle = '#ef5350';
     ctx.beginPath();
     ctx.moveTo(phX - 5, 0);
@@ -117,17 +220,17 @@ const Ruler: React.FC<RulerProps> = ({ duration, pxPerSec, currentTime, onSeek }
     ctx.lineTo(phX, 10);
     ctx.closePath();
     ctx.fill();
-  }, [duration, pxPerSec, currentTime]);
+  }, [safeDuration, safePxPerSec, safeCurrentTime]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
       const scrollLeft = e.currentTarget.parentElement?.scrollLeft ?? 0;
       const x = e.clientX - rect.left + scrollLeft;
-      const time = Math.max(0, Math.min(x / pxPerSec, duration));
+      const time = clamp(x / safePxPerSec, 0, safeDuration);
       onSeek(time);
     },
-    [pxPerSec, duration, onSeek],
+    [safePxPerSec, safeDuration, onSeek],
   );
 
   return (
@@ -151,14 +254,17 @@ interface EventBlockProps {
 }
 
 const EventBlock: React.FC<EventBlockProps> = ({ event, pxPerSec, isSelected, onSelect }) => {
-  const left = event.startTime * pxPerSec;
-  const width = Math.max(event.duration * pxPerSec, 24);
+  const safePxPerSec = Math.max(1, finiteOr(pxPerSec, PX_PER_SEC_BASE));
+  const startTime = Math.max(0, finiteOr(event.startTime, 0));
+  const duration = Math.max(0, finiteOr(event.duration, 0));
+  const left = startTime * safePxPerSec;
+  const width = Math.max(duration * safePxPerSec, 24);
 
   return (
     <div
       className={`timeline-event timeline-event--${event.type} ${isSelected ? 'timeline-event--selected' : ''}`}
       style={{ left, width }}
-      title={`${event.type}: ${event.label} (${event.startTime.toFixed(1)}s - ${(event.startTime + event.duration).toFixed(1)}s)`}
+      title={`${event.type}: ${event.label} (${startTime.toFixed(1)}s - ${(startTime + duration).toFixed(1)}s)`}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
@@ -176,8 +282,8 @@ const TimelinePanel: React.FC = () => {
   const tracksRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
 
-  const duration = currentShot?.duration ?? 5;
-  const pxPerSec = PX_PER_SEC_BASE;
+  const duration = Math.max(0, finiteOr(currentShot?.duration ?? 5, 5));
+  const pxPerSec = Math.max(1, finiteOr(PX_PER_SEC_BASE, 120));
   const totalWidth = duration * pxPerSec + 20;
 
   const tracks = useMemo(() => {
@@ -207,7 +313,7 @@ const TimelinePanel: React.FC = () => {
         if (!tracksRef.current) return;
         const rect = tracksRef.current.getBoundingClientRect();
         const x = ev.clientX - rect.left + tracksRef.current.scrollLeft;
-        const time = Math.max(0, Math.min(x / pxPerSec, duration));
+        const time = clamp(x / pxPerSec, 0, duration);
         dispatch({ type: 'SET_PLAYBACK_TIME', time });
       };
       const handleUp = () => {
@@ -235,12 +341,13 @@ const TimelinePanel: React.FC = () => {
     [dispatch, state.currentShotIndex],
   );
 
-  const playheadX = state.playbackTime * pxPerSec;
+  const playheadX = clamp(finiteOr(state.playbackTime, 0), 0, duration) * pxPerSec;
 
   // Format time display
   const formatTime = (t: number) => {
-    const mins = Math.floor(t / 60);
-    const secs = t % 60;
+    const safeTime = Math.max(0, finiteOr(t, 0));
+    const mins = Math.floor(safeTime / 60);
+    const secs = safeTime % 60;
     return `${String(mins).padStart(2, '0')}:${secs.toFixed(1).padStart(4, '0')}`;
   };
 

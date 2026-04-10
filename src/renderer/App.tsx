@@ -9,10 +9,9 @@ import EditorLayout from './components/layout/EditorLayout';
 import Toolbar from './components/layout/Toolbar';
 import ManagerView from './components/managers/ManagerView';
 import { FULL_DEMO_DSL, DEMO_CHARACTERS, DEMO_SCENES } from '../demo/demo-project';
-import { parseShots } from '../core/dsl/parser';
 
 import './styles/global.css';
-import './styles/components.css';
+import './App.css';
 
 // ─── Error Boundary ─────────────────────────────────────────
 
@@ -87,8 +86,8 @@ function KeyboardShortcuts() {
       if (e.code === 'Digit1' && !ctrl) { dispatch({ type: 'SET_VIEW_MODE', mode: 'edit' }); return; }
       if (e.code === 'Digit2' && !ctrl) { dispatch({ type: 'SET_VIEW_MODE', mode: 'preview' }); return; }
       if (e.code === 'Digit3' && !ctrl) { dispatch({ type: 'SET_VIEW_MODE', mode: 'split' }); return; }
-      if (e.code === 'ArrowLeft' && !ctrl) { e.preventDefault(); dispatch({ type: 'SEEK', time: Math.max(0, state.currentTime - 0.1) }); return; }
-      if (e.code === 'ArrowRight' && !ctrl) { e.preventDefault(); dispatch({ type: 'SEEK', time: Math.min(currentShot?.duration ?? 0, state.currentTime + 0.1) }); return; }
+      if (e.code === 'ArrowLeft' && !ctrl) { e.preventDefault(); dispatch({ type: 'SEEK', time: Math.max(0, state.playbackTime - 0.1) }); return; }
+      if (e.code === 'ArrowRight' && !ctrl) { e.preventDefault(); dispatch({ type: 'SEEK', time: Math.min(currentShot?.duration ?? 0, state.playbackTime + 0.1) }); return; }
       if (e.code === 'ArrowUp' && !ctrl && state.currentShotIndex > 0) { e.preventDefault(); dispatch({ type: 'SET_CURRENT_SHOT', index: state.currentShotIndex - 1 }); return; }
       if (e.code === 'ArrowDown' && !ctrl) { e.preventDefault(); const max = (state.project?.shots.length ?? 1) - 1; if (state.currentShotIndex < max) dispatch({ type: 'SET_CURRENT_SHOT', index: state.currentShotIndex + 1 }); return; }
       if (e.code === 'Home') { e.preventDefault(); dispatch({ type: 'SEEK', time: 0 }); return; }
@@ -145,26 +144,21 @@ function StatusBar() {
 
 function AppInner() {
   const [showSplash, setShowSplash] = useState(false);
-  const { dispatch } = useEditor();
+  const { dispatch, state } = useEditor();
 
   const handleLoadDemo = useCallback(() => {
-    try {
-      const shots = parseShots(FULL_DEMO_DSL);
-      dispatch({
-        type: 'SET_PROJECT',
-        project: {
-          name: 'Panda Shot Engine — Demo',
-          shots,
-          characters: [...DEMO_CHARACTERS],
-          scenes: [...DEMO_SCENES],
-        },
-        dslText: FULL_DEMO_DSL,
-      });
-    } catch (err) {
-      console.error('Failed to load demo:', err);
-    }
+    dispatch({
+      type: 'SET_PROJECT',
+      project: {
+        name: 'Panda Shot Engine — Demo',
+        shots: state.project?.shots ?? [],
+        characters: [...DEMO_CHARACTERS],
+        scenes: [...DEMO_SCENES],
+      },
+      dslText: FULL_DEMO_DSL,
+    });
     setShowSplash(false);
-  }, [dispatch]);
+  }, [dispatch, state.project?.shots]);
 
   const handleNewProject = useCallback(() => {
     dispatch({ type: 'NEW_PROJECT' });

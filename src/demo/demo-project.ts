@@ -10,7 +10,7 @@ import { CharacterAsset, SceneAsset, ExpressionSet, DslShot, PandaProject } from
 // ─── Placeholder SVG generators ─────────────────────────────
 
 function svgDataUrl(svg: string): string {
-  return 'data:image/svg+xml;base64,' + btoa(svg);
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
 }
 
 function makePartSvg(label: string, color: string, w = 64, h = 64): string {
@@ -211,6 +211,42 @@ export const DEMO_SCENES: SceneAsset[] = [
   },
 ];
 
+export interface SceneRenderPreset {
+  bgGradientStart: string;
+  bgGradientEnd: string;
+  floorColor: string;
+  floorHighlight: string;
+}
+
+const DEFAULT_SCENE_PRESET: SceneRenderPreset = {
+  bgGradientStart: '#3e2723',
+  bgGradientEnd: '#1a0e0a',
+  floorColor: '#2d2018',
+  floorHighlight: 'rgba(255, 255, 255, 0.14)',
+};
+
+function withAlpha(hex: string, alpha: number): string {
+  const normalized = hex.replace('#', '');
+  if (normalized.length !== 6) return `rgba(255, 255, 255, ${alpha})`;
+
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+export function getScenePreset(sceneId: string): SceneRenderPreset {
+  const scene = DEMO_SCENES.find((item) => item.id === sceneId);
+  if (!scene) return DEFAULT_SCENE_PRESET;
+
+  return {
+    bgGradientStart: scene.gradientStart || DEFAULT_SCENE_PRESET.bgGradientStart,
+    bgGradientEnd: scene.gradientEnd || DEFAULT_SCENE_PRESET.bgGradientEnd,
+    floorColor: scene.color || DEFAULT_SCENE_PRESET.floorColor,
+    floorHighlight: withAlpha(scene.color || '#ffffff', 0.28),
+  };
+}
+
 // ─── Demo DSL Story ─────────────────────────────────────────
 
 export const DEMO_SHOTS: DslShot[] = [
@@ -233,6 +269,11 @@ export const DEMO_SHOTS: DslShot[] = [
     duration: 4,
   },
 ];
+
+export const SHOT_1_DSL = DEMO_SHOTS[0]?.dsl ?? '';
+export const SHOT_2_DSL = DEMO_SHOTS[1]?.dsl ?? '';
+export const SHOT_3_DSL = DEMO_SHOTS[2]?.dsl ?? '';
+export const FULL_DEMO_DSL = DEMO_SHOTS.map((shot) => shot.dsl).join('\n\n');
 
 // ─── Full Demo Project ──────────────────────────────────────
 

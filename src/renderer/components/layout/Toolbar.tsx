@@ -53,7 +53,7 @@ function ToolbarSeparator() {
 
 function TimeDisplay() {
   const { state, currentShot } = useEditor();
-  const time = state.currentTime;
+  const time = state.playbackTime;
   const duration = currentShot?.duration ?? 0;
 
   const formatTime = (t: number) => {
@@ -74,24 +74,15 @@ function TimeDisplay() {
 // ─── Speed Dropdown ─────────────────────────────────────────
 
 function SpeedSelector() {
-  const { state, dispatch } = useEditor();
-  const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
-
   return (
     <div className="toolbar-speed-selector">
       <select
         className="toolbar-speed-select"
-        value={state.playbackSpeed}
-        onChange={(e) =>
-          dispatch({ type: 'SET_SPEED', speed: parseFloat(e.target.value) })
-        }
+        value={1}
+        disabled
         title="Playback speed"
       >
-        {speeds.map((s) => (
-          <option key={s} value={s}>
-            {s}x
-          </option>
-        ))}
+        <option value={1}>1x</option>
       </select>
     </div>
   );
@@ -105,19 +96,19 @@ function ZoomControl() {
   const zoomLevels = [25, 50, 75, 100, 125, 150, 200];
 
   const zoomIn = useCallback(() => {
-    const current = state.zoom;
+    const current = Math.round(state.zoom * 100);
     const nextLevel = zoomLevels.find((z) => z > current) ?? 200;
-    dispatch({ type: 'SET_ZOOM', zoom: nextLevel });
+    dispatch({ type: 'SET_ZOOM', zoom: nextLevel / 100 });
   }, [state.zoom, dispatch]);
 
   const zoomOut = useCallback(() => {
-    const current = state.zoom;
+    const current = Math.round(state.zoom * 100);
     const prevLevel = [...zoomLevels].reverse().find((z) => z < current) ?? 25;
-    dispatch({ type: 'SET_ZOOM', zoom: prevLevel });
+    dispatch({ type: 'SET_ZOOM', zoom: prevLevel / 100 });
   }, [state.zoom, dispatch]);
 
   const resetZoom = useCallback(() => {
-    dispatch({ type: 'SET_ZOOM', zoom: 100 });
+    dispatch({ type: 'SET_ZOOM', zoom: 1 });
   }, [dispatch]);
 
   return (
@@ -128,7 +119,7 @@ function ZoomControl() {
         onClick={resetZoom}
         title="Reset zoom to 100%"
       >
-        {state.zoom}%
+        {Math.round(state.zoom * 100)}%
       </button>
       <ToolButton label="+" title="Zoom in" onClick={zoomIn} small />
     </div>
@@ -138,26 +129,11 @@ function ZoomControl() {
 // ─── View Mode Tabs ─────────────────────────────────────────
 
 function ViewModeTabs() {
-  const { state, dispatch } = useEditor();
-
-  const modes: Array<{ id: 'edit' | 'preview' | 'split'; label: string }> = [
-    { id: 'edit', label: 'Edit' },
-    { id: 'preview', label: 'Preview' },
-    { id: 'split', label: 'Split' },
-  ];
-
   return (
     <div className="toolbar-view-tabs">
-      {modes.map((mode) => (
-        <button
-          key={mode.id}
-          className={`toolbar-view-tab ${state.viewMode === mode.id ? 'toolbar-view-tab--active' : ''}`}
-          onClick={() => dispatch({ type: 'SET_VIEW_MODE', mode: mode.id })}
-          title={`Switch to ${mode.label} view`}
-        >
-          {mode.label}
-        </button>
-      ))}
+      <button className="toolbar-view-tab toolbar-view-tab--active" title="Current view">
+        Edit
+      </button>
     </div>
   );
 }
@@ -276,35 +252,32 @@ export default function Toolbar() {
 
   // Playback controls
   const handlePlayPause = useCallback(() => {
-    dispatch({ type: state.isPlaying ? 'PAUSE' : 'PLAY' });
+    dispatch({ type: 'TOGGLE_PLAY' });
   }, [dispatch, state.isPlaying]);
 
   const handleStop = useCallback(() => {
-    dispatch({ type: 'PAUSE' });
-    dispatch({ type: 'SEEK', time: 0 });
+    dispatch({ type: 'STOP' });
   }, [dispatch]);
 
   const handleStepBack = useCallback(() => {
-    dispatch({ type: 'PAUSE' });
-    dispatch({ type: 'SEEK', time: Math.max(0, state.currentTime - 0.1) });
-  }, [dispatch, state.currentTime]);
+    dispatch({ type: 'SET_PLAYBACK_TIME', time: Math.max(0, state.playbackTime - 0.1) });
+  }, [dispatch, state.playbackTime]);
 
   const handleStepForward = useCallback(() => {
     const maxTime = currentShot?.duration ?? 0;
-    dispatch({ type: 'PAUSE' });
     dispatch({
-      type: 'SEEK',
-      time: Math.min(maxTime, state.currentTime + 0.1),
+      type: 'SET_PLAYBACK_TIME',
+      time: Math.min(maxTime, state.playbackTime + 0.1),
     });
-  }, [dispatch, state.currentTime, currentShot]);
+  }, [dispatch, state.playbackTime, currentShot]);
 
   const handleSkipStart = useCallback(() => {
-    dispatch({ type: 'SEEK', time: 0 });
+    dispatch({ type: 'SET_PLAYBACK_TIME', time: 0 });
   }, [dispatch]);
 
   const handleSkipEnd = useCallback(() => {
     const maxTime = currentShot?.duration ?? 0;
-    dispatch({ type: 'SEEK', time: maxTime });
+    dispatch({ type: 'SET_PLAYBACK_TIME', time: maxTime });
   }, [dispatch, currentShot]);
 
   // Undo/Redo
@@ -318,9 +291,9 @@ export default function Toolbar() {
 
   // Project info
   const projectName = state.project?.name ?? 'Untitled';
-  const shotCount = state.project?.shots.length ?? 0;
+  const shotCount = state.project?.shots?.length ?? 0;
   const currentShotIdx = state.currentShotIndex;
-  const hasErrors = state.dslErrors.length > 0;
+  const hasErrors = false;
 
   return (
     <div className="toolbar">
@@ -332,11 +305,6 @@ export default function Toolbar() {
         <span className="toolbar-shot-indicator">
           Shot {currentShotIdx + 1}/{shotCount}
         </span>
-        {hasErrors && (
-          <span className="toolbar-error-badge" title={`${state.dslErrors.length} error(s)`}>
-            {state.dslErrors.length} err
-          </span>
-        )}
       </div>
 
       <ToolbarSeparator />

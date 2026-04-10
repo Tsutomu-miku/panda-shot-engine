@@ -7,13 +7,10 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditor } from '../../hooks/useEditorState';
 import { getScenePreset, SceneRenderPreset } from '../../../demo/demo-project';
-import type { Shot, PlaceCommand, TimelineEvent, Command, CameraCommand } from '../../../core/dsl/types';
 
 import './CanvasPreview.css';
 
 // ─── Types ──────────────────────────────────────────────────
-
-type Expression = 'neutral' | 'happy' | 'angry' | 'shocked' | 'smirk' | 'crying';
 
 interface CharacterRenderState {
   id: string;
@@ -21,7 +18,7 @@ interface CharacterRenderState {
   y: number;
   facing: 'left' | 'right';
   scale: number;
-  expression: Expression;
+  expression: string;
   action: string | null;
   dialogueText: string | null;
   dialogueVoice: string | null;
@@ -37,148 +34,53 @@ interface CameraRenderState {
   panY: number;
 }
 
-// ─── Semantic Position Mapping ──────────────────────────────
-
-function semanticToX(semantic: string | undefined): number {
-  const map: Record<string, number> = {
-    'far-left': 0.1,
-    'left-third': 0.25,
-    'left': 0.2,
-    'center-left': 0.35,
-    'center': 0.5,
-    'center-right': 0.65,
-    'right': 0.8,
-    'right-third': 0.75,
-    'far-right': 0.9,
-  };
-  return map[semantic ?? 'center'] ?? 0.5;
+function parseSceneId(dsl: string): string {
+  return dsl.match(/^scene\s+([\w-]+)/m)?.[1] ?? 'tavern_interior';
 }
 
-// ─── Compute Frame State from DSL Shot ──────────────────────
-
-function computeCharactersAtTime(
-  shot: Shot,
-  time: number,
-): CharacterRenderState[] {
-  const characters: Map<string, CharacterRenderState> = new Map();
-
-  // Initialize from placements
-  for (const p of shot.placements) {
-    characters.set(p.character, {
-      id: p.character,
-      x: semanticToX(p.position.semantic),
-      y: 0.65,
-      facing: p.facing,
-      scale: p.scale ?? 1.0,
-      expression: 'neutral',
-      action: null,
-      dialogueText: null,
-      dialogueVoice: null,
-    });
-  }
-
-  // Apply timeline events up to current time
-  for (const ev of shot.timeline) {
-    if (ev.time > time) break;
-    for (const cmd of ev.commands) {
-      if (cmd.type === 'expression' && characters.has(cmd.character)) {
-        const ch = characters.get(cmd.character)!;
-        ch.expression = cmd.expression as Expression;
-        ch.dialogueText = null; // clear old dialogue
-      }
-      if (cmd.type === 'say' && characters.has(cmd.character)) {
-        const ch = characters.get(cmd.character)!;
-        ch.dialogueText = cmd.text;
-        ch.dialogueVoice = cmd.voice ?? null;
-      }
-      if (cmd.type === 'action' && characters.has(cmd.character)) {
-        const ch = characters.get(cmd.character)!;
-        ch.action = cmd.action;
-      }
-      if (cmd.type === 'enter') {
-        const toX = semanticToX(cmd.to.semantic);
-        const fromX = semanticToX(cmd.from.semantic);
-        // Check if enter is still in progress
-        const enterDuration = 1.5; // default enter duration
-        const elapsed = time - ev.time;
-        const progress = Math.min(1, elapsed / enterDuration);
-        const currentX = fromX + (toX - fromX) * progress;
-        characters.set(cmd.character, {
-          id: cmd.character,
-          x: currentX,
-          y: 0.65,
-          facing: cmd.facing,
-          scale: 1.0,
-          expression: 'neutral',
-          action: cmd.action ?? 'walk',
-          dialogueText: null,
-          dialogueVoice: null,
-        });
-      }
-    }
-  }
-
-  // Clear dialogue that is old (more than 2s)
-  for (const ev of shot.timeline) {
-    if (ev.time > time) break;
-    for (const cmd of ev.commands) {
-      if (cmd.type === 'say' && characters.has(cmd.character)) {
-        if (time - ev.time > 2.0) {
-          const ch = characters.get(cmd.character)!;
-          if (ch.dialogueText === cmd.text) {
-            ch.dialogueText = null;
-          }
-        }
-      }
-    }
-  }
-
-  return Array.from(characters.values());
+function parseCharacters(dsl: string): string[] {
+  return Array.from(
+    new Set(
+      Array.from(dsl.matchAll(/(hero|villain|sidekick|elder|beast)/g)).map((m) => m[1]),
+    ),
+  );
 }
 
-function computeCameraAtTime(shot: Shot, time: number): CameraRenderState {
+function computeCharactersAtTime(shot: { dsl: string }, _time: number): CharacterRenderState[] {
+  const names = parseCharacters(shot.dsl);
+  return names.map((name, index) => ({
+    id: name,
+    x: (index + 1) / (names.length + 1),
+    y: 0.65,
+    facing: index % 2 === 0 ? 'right' : 'left',
+    scale: 1,
+    expression: 'neutral',
+    action: null,
+    dialogueText: null,
+    dialogueVoice: null,
+  }));
+}
+
+function computeCameraAtTime(shot: { dsl: string }, _time: number): CameraRenderState {
+  const cameraType = shot.dsl.match(/camera\s+([\w-]+)/)?.[1] ?? 'wide';
   const cam: CameraRenderState = {
-    type: 'wide',
+    type: cameraType,
     target: null,
-    zoom: 1.0,
+    zoom: 1,
     shakeIntensity: 0,
     shakeTime: 0,
     panX: 0,
     panY: 0,
   };
 
-  for (const ev of shot.timeline) {
-    if (ev.time > time) break;
-    for (const cmd of ev.commands) {
-      if (cmd.type === 'camera') {
-        cam.type = cmd.cameraType;
-        cam.target = cmd.target ?? null;
-        if (cmd.cameraType === 'close-up') {
-          cam.zoom = 1.8;
-        } else if (cmd.cameraType === 'medium') {
-          cam.zoom = 1.3;
-        } else if (cmd.cameraType === 'extreme-close-up') {
-          cam.zoom = 2.5;
-        } else {
-          cam.zoom = 1.0;
-        }
-        if (cmd.motion === 'shake' && cmd.duration) {
-          const elapsed = time - ev.time;
-          if (elapsed < cmd.duration) {
-            cam.shakeIntensity = cmd.intensity ?? 5;
-            cam.shakeTime = elapsed;
-          } else {
-            cam.shakeIntensity = 0;
-          }
-        }
-        if (cmd.motion === 'zoom-in') cam.zoom *= 1.3;
-        if (cmd.motion === 'zoom-out') cam.zoom *= 0.8;
-        if (cmd.motion === 'pan-left') cam.panX -= 50;
-        if (cmd.motion === 'pan-right') cam.panX += 50;
-      }
-    }
-  }
-  return cam;
+  if (cameraType === 'medium') cam.zoom = 1.3;
+    return {
+    ...cam,
+    zoom:
+      cameraType === 'close-up' ? 1.8 :
+      cameraType === 'extreme-close-up' ? 2.5 :
+      cameraType === 'medium' ? 1.3 : 1,
+  };
 }
 
 // ─── Background Rendering ───────────────────────────────────
@@ -867,7 +769,7 @@ function drawHUD(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
-  shot: Shot,
+  shot: { id: string; duration?: number; dsl: string },
   time: number,
   camera: CameraRenderState,
 ) {
@@ -879,9 +781,9 @@ function drawHUD(
 
   const info = [
     `Shot: ${shot.id}`,
-    `Time: ${time.toFixed(2)}s / ${shot.duration}s`,
+    `Time: ${time.toFixed(2)}s / ${shot.duration ?? 0}s`,
     `Camera: ${camera.type}${camera.target ? ' -> ' + camera.target : ''}`,
-    `Set: ${shot.set}`,
+    `Set: ${parseSceneId(shot.dsl)}`,
   ];
   for (let i = 0; i < info.length; i++) {
     ctx.fillText(info[i], 10, 10 + i * 14);
@@ -909,11 +811,11 @@ const CanvasPreview: React.FC = () => {
   const [draggingChar, setDraggingChar] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const rafRef = useRef<number | null>(null);
-  const playbackTimeRef = useRef(state.currentTime);
+  const playbackTimeRef = useRef(state.playbackTime);
 
   useEffect(() => {
-    playbackTimeRef.current = state.currentTime;
-  }, [state.currentTime]);
+    playbackTimeRef.current = state.playbackTime;
+  }, [state.playbackTime]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -939,7 +841,7 @@ const CanvasPreview: React.FC = () => {
       return;
     }
 
-    const time = state.currentTime;
+    const time = state.playbackTime;
     const camera = computeCameraAtTime(currentShot, time);
     const characters = computeCharactersAtTime(currentShot, time);
 
@@ -967,7 +869,7 @@ const CanvasPreview: React.FC = () => {
     }
 
     // Draw background
-    drawBackground(ctx, W, H, currentShot.set, time);
+    drawBackground(ctx, W, H, parseSceneId(currentShot.dsl), time);
 
     // Draw characters sorted by y position (back to front)
     const sorted = [...characters].sort((a, b) => a.y - b.y);
@@ -990,7 +892,7 @@ const CanvasPreview: React.FC = () => {
 
     // Draw HUD
     drawHUD(ctx, W, H, currentShot, time, camera);
-  }, [currentShot, state.currentTime, state.selectedElement]);
+  }, [currentShot, state.playbackTime, state.selectedElement]);
 
   // Resize & redraw
   useEffect(() => {
@@ -1002,7 +904,7 @@ const CanvasPreview: React.FC = () => {
       const rect = wrapper.getBoundingClientRect();
       const maxW = rect.width - 24;
       const maxH = rect.height - 24;
-      const zoom = state.zoom / 100;
+      const zoom = state.zoom;
 
       let w = maxW * zoom;
       let h = w * (9 / 16);
@@ -1031,20 +933,20 @@ const CanvasPreview: React.FC = () => {
   useEffect(() => {
     if (!state.isPlaying || !currentShot) return;
     let lastTime = performance.now();
-    playbackTimeRef.current = state.currentTime;
+    playbackTimeRef.current = state.playbackTime;
 
     const tick = (now: number) => {
-      const dt = (now - lastTime) / 1000 * state.playbackSpeed;
+      const dt = (now - lastTime) / 1000;
       lastTime = now;
       const nextTime = playbackTimeRef.current + dt;
 
       if (nextTime >= currentShot.duration) {
         playbackTimeRef.current = currentShot.duration;
-        dispatch({ type: 'PAUSE' });
-        dispatch({ type: 'SEEK', time: currentShot.duration });
+        dispatch({ type: 'STOP' });
+        dispatch({ type: 'SET_PLAYBACK_TIME', time: currentShot.duration });
       } else {
         playbackTimeRef.current = nextTime;
-        dispatch({ type: 'SEEK', time: nextTime });
+        dispatch({ type: 'SET_PLAYBACK_TIME', time: nextTime });
         rafRef.current = requestAnimationFrame(tick);
       }
     };
@@ -1053,7 +955,7 @@ const CanvasPreview: React.FC = () => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [state.isPlaying, state.playbackSpeed, currentShot]);
+  }, [state.isPlaying, state.playbackTime, currentShot, dispatch]);
 
   // Mouse handlers for character drag
   const handleMouseDown = useCallback(
@@ -1064,7 +966,7 @@ const CanvasPreview: React.FC = () => {
       const mx = (e.clientX - rect.left) / rect.width;
       const my = (e.clientY - rect.top) / rect.height;
 
-      const characters = computeCharactersAtTime(currentShot, state.currentTime);
+      const characters = computeCharactersAtTime(currentShot, state.playbackTime);
       // Find clicked character (check in reverse order for top-most)
       for (let i = characters.length - 1; i >= 0; i--) {
         const ch = characters[i];
@@ -1086,16 +988,9 @@ const CanvasPreview: React.FC = () => {
       }
 
       // Click on empty area: select shot
-      dispatch({
-        type: 'SELECT_ELEMENT',
-        element: {
-          type: 'shot',
-          shotIndex: state.currentShotIndex,
-          id: currentShot.id,
-        },
-      });
+      dispatch({ type: 'DESELECT' });
     },
-    [currentShot, state.currentTime, state.currentShotIndex, dispatch],
+    [currentShot, state.playbackTime, dispatch],
   );
 
   const handleMouseMove = useCallback(

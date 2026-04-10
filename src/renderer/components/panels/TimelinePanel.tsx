@@ -4,9 +4,9 @@
 // zoom control, click-to-select, drag playhead
 // ============================================================
 
-import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useEditor } from '../../hooks/useEditorState';
-import type { Shot, TimelineEvent, Command } from '../../../core/dsl/types';
+import type { DslShot } from '../../../core/project/types';
 
 import './TimelinePanel.css';
 
@@ -36,171 +36,30 @@ interface Track {
   events: TrackEvent[];
 }
 
-function buildTracksFromShot(shot: Shot): Track[] {
-  const charTrackMap = new Map<string, TrackEvent[]>();
-  const cameraEvents: TrackEvent[] = [];
-  const sfxEvents: TrackEvent[] = [];
-  const vfxEvents: TrackEvent[] = [];
+function buildTracksFromShot(shot: DslShot): Track[] {
+  const lines = shot.dsl
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-  // Gather characters from placements
-  for (const p of shot.placements) {
-    if (!charTrackMap.has(p.character)) {
-      charTrackMap.set(p.character, []);
-    }
-  }
+  const events: TrackEvent[] = lines.map((line, index) => ({
+    id: `dsl_${shot.id}_${index}`,
+    trackId: 'track_dsl',
+    type: line.startsWith('camera') ? 'camera' : 'action',
+    label: line.length > 24 ? `${line.slice(0, 24)}...` : line,
+    startTime: Math.min(index * 0.6, Math.max((shot.duration ?? 0) - 0.4, 0)),
+    duration: 0.5,
+  }));
 
-  let eventIdCounter = 0;
-
-  // Walk timeline and extract events
-  for (let ti = 0; ti < shot.timeline.length; ti++) {
-    const ev = shot.timeline[ti];
-    const nextTime = ti + 1 < shot.timeline.length
-      ? shot.timeline[ti + 1].time
-      : shot.duration;
-    const defaultDuration = Math.max(0.3, Math.min(2.0, nextTime - ev.time));
-
-    for (const cmd of ev.commands) {
-      const eid = `ev_${eventIdCounter++}`;
-
-      switch (cmd.type) {
-        case 'expression': {
-          if (!charTrackMap.has(cmd.character)) charTrackMap.set(cmd.character, []);
-          charTrackMap.get(cmd.character)!.push({
-            id: eid,
-            trackId: `track_${cmd.character}`,
-            type: 'expression',
-            label: cmd.expression,
-            startTime: ev.time,
-            duration: defaultDuration,
-            character: cmd.character,
-          });
-          break;
-        }
-        case 'action': {
-          if (!charTrackMap.has(cmd.character)) charTrackMap.set(cmd.character, []);
-          charTrackMap.get(cmd.character)!.push({
-            id: eid,
-            trackId: `track_${cmd.character}`,
-            type: 'action',
-            label: cmd.action,
-            startTime: ev.time,
-            duration: defaultDuration,
-            character: cmd.character,
-          });
-          break;
-        }
-        case 'say': {
-          if (!charTrackMap.has(cmd.character)) charTrackMap.set(cmd.character, []);
-          charTrackMap.get(cmd.character)!.push({
-            id: eid,
-            trackId: `track_${cmd.character}`,
-            type: 'say',
-            label: `"${cmd.text.slice(0, 15)}${cmd.text.length > 15 ? '...' : ''}"`,
-            startTime: ev.time,
-            duration: Math.max(1.5, defaultDuration),
-            character: cmd.character,
-          });
-          break;
-        }
-        case 'enter': {
-          if (!charTrackMap.has(cmd.character)) charTrackMap.set(cmd.character, []);
-          charTrackMap.get(cmd.character)!.push({
-            id: eid,
-            trackId: `track_${cmd.character}`,
-            type: 'action',
-            label: 'enter',
-            startTime: ev.time,
-            duration: 1.5,
-            character: cmd.character,
-          });
-          break;
-        }
-        case 'camera': {
-          let label = cmd.cameraType;
-          if (cmd.target) label += ` ${cmd.target}`;
-          if (cmd.motion) label += ` ${cmd.motion}`;
-          cameraEvents.push({
-            id: eid,
-            trackId: 'track_camera',
-            type: 'camera',
-            label,
-            startTime: ev.time,
-            duration: cmd.duration ?? defaultDuration,
-          });
-          break;
-        }
-        case 'sfx': {
-          sfxEvents.push({
-            id: eid,
-            trackId: 'track_sfx',
-            type: 'sfx',
-            label: cmd.sound,
-            startTime: ev.time,
-            duration: 0.5,
-          });
-          break;
-        }
-        case 'vfx': {
-          vfxEvents.push({
-            id: eid,
-            trackId: 'track_vfx',
-            type: 'vfx',
-            label: cmd.effect,
-            startTime: ev.time,
-            duration: 0.8,
-          });
-          break;
-        }
-      }
-    }
-  }
-
-  const CHAR_COLORS = ['#4caf50', '#f44336', '#2196f3', '#9c27b0', '#ff9800', '#00bcd4'];
-  const tracks: Track[] = [];
-  let colorIdx = 0;
-
-  for (const [charId, events] of charTrackMap) {
-    tracks.push({
-      id: `track_${charId}`,
-      name: charId,
-      color: CHAR_COLORS[colorIdx % CHAR_COLORS.length],
+  return [
+    {
+      id: 'track_dsl',
+      name: 'DSL Events',
+      color: '#4caf50',
       type: 'character',
       events,
-    });
-    colorIdx++;
-  }
-
-  if (cameraEvents.length > 0) {
-    tracks.push({
-      id: 'track_camera',
-      name: 'Camera',
-      color: '#ab47bc',
-      type: 'camera',
-      events: cameraEvents,
-    });
-  }
-
-  if (sfxEvents.length > 0) {
-    tracks.push({
-      id: 'track_sfx',
-      name: 'SFX',
-      color: '#ffa726',
-      type: 'sfx',
-      events: sfxEvents,
-    });
-  }
-
-  if (vfxEvents.length > 0) {
-    tracks.push({
-      id: 'track_vfx',
-      name: 'VFX',
-      color: '#ef5350',
-      type: 'sfx',
-      events: vfxEvents,
-    });
-  }
-
-  return tracks;
+    },
+  ];
 }
 
 // ─── Ruler Component ────────────────────────────────────────
@@ -318,7 +177,7 @@ const TimelinePanel: React.FC = () => {
   const labelsRef = useRef<HTMLDivElement>(null);
 
   const duration = currentShot?.duration ?? 5;
-  const pxPerSec = PX_PER_SEC_BASE * state.timelineZoom;
+  const pxPerSec = PX_PER_SEC_BASE;
   const totalWidth = duration * pxPerSec + 20;
 
   const tracks = useMemo(() => {
@@ -334,21 +193,11 @@ const TimelinePanel: React.FC = () => {
   }, []);
 
   const handleSeek = useCallback(
-    (time: number) => dispatch({ type: 'SEEK', time }),
+    (time: number) => dispatch({ type: 'SET_PLAYBACK_TIME', time }),
     [dispatch],
   );
 
-  // Ctrl+wheel zoom
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.15 : 0.15;
-        dispatch({ type: 'SET_TIMELINE_ZOOM', zoom: state.timelineZoom + delta });
-      }
-    },
-    [state.timelineZoom, dispatch],
-  );
+  const handleWheel = useCallback((_e: React.WheelEvent) => {}, []);
 
   // Playhead drag
   const handlePlayheadMouseDown = useCallback(
@@ -359,7 +208,7 @@ const TimelinePanel: React.FC = () => {
         const rect = tracksRef.current.getBoundingClientRect();
         const x = ev.clientX - rect.left + tracksRef.current.scrollLeft;
         const time = Math.max(0, Math.min(x / pxPerSec, duration));
-        dispatch({ type: 'SEEK', time });
+        dispatch({ type: 'SET_PLAYBACK_TIME', time });
       };
       const handleUp = () => {
         window.removeEventListener('mousemove', handleMove);
@@ -375,19 +224,18 @@ const TimelinePanel: React.FC = () => {
   const handleSelectEvent = useCallback(
     (event: TrackEvent) => {
       dispatch({
-        type: 'SELECT_ELEMENT',
-        element: {
-          type: 'timelineEvent',
-          shotIndex: state.currentShotIndex,
-          id: event.id,
-          trackId: event.trackId,
-        },
-      });
+          type: 'SELECT_ELEMENT',
+          element: {
+            type: 'action',
+            shotIndex: state.currentShotIndex,
+            id: event.id,
+          },
+        });
     },
     [dispatch, state.currentShotIndex],
   );
 
-  const playheadX = state.currentTime * pxPerSec;
+  const playheadX = state.playbackTime * pxPerSec;
 
   // Format time display
   const formatTime = (t: number) => {
@@ -403,10 +251,10 @@ const TimelinePanel: React.FC = () => {
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Timeline</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
           <span className="text-mono" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-            {formatTime(state.currentTime)} / {formatTime(duration)}
+            {formatTime(state.playbackTime)} / {formatTime(duration)}
           </span>
           <span className="text-mono" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-            Zoom: {Math.round(state.timelineZoom * 100)}%
+            Zoom: 100%
           </span>
         </div>
       </div>
@@ -443,7 +291,7 @@ const TimelinePanel: React.FC = () => {
           <Ruler
             duration={duration}
             pxPerSec={pxPerSec}
-            currentTime={state.currentTime}
+            currentTime={state.playbackTime}
             onSeek={handleSeek}
           />
 
@@ -460,7 +308,7 @@ const TimelinePanel: React.FC = () => {
                   event={ev}
                   pxPerSec={pxPerSec}
                   isSelected={
-                    state.selectedElement?.type === 'timelineEvent' &&
+                    state.selectedElement?.type === 'action' &&
                     state.selectedElement?.id === ev.id
                   }
                   onSelect={() => handleSelectEvent(ev)}

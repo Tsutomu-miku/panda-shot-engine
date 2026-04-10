@@ -8,6 +8,8 @@ import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { useEditor, CharacterAsset, SceneAsset } from '../../hooks/useEditorState';
 import { DEMO_CHARACTERS, DEMO_SCENES } from '../../../demo/demo-project';
 
+import './AssetPanel.css';
+
 // ─── Scene Preview Component ──────────────────────────────
 
 const ScenePreview: React.FC<{ scene: SceneAsset }> = ({ scene }) => (

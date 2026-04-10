@@ -11,8 +11,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useEditor, DEMO_SCENES } from '../../hooks/useEditorState';
-import { Shot, CameraCommand } from '../../../core/dsl/types';
+import { useEditor } from '../../hooks/useEditorState';
+import type { DslShot } from '../../../core/project/types';
 import { getScenePreset } from '../../../demo/demo-project';
 
 import './ShotList.css';
@@ -24,7 +24,7 @@ function ShotThumbnail({
   width,
   height,
 }: {
-  shot: Shot;
+  shot: DslShot;
   width: number;
   height: number;
 }) {
@@ -42,7 +42,9 @@ function ShotThumbnail({
     ctx.scale(dpr, dpr);
 
     // Draw scene background
-    const preset = getScenePreset(shot.set);
+    const sceneMatch = shot.dsl.match(/^scene\s+([\w-]+)/m);
+    const sceneId = sceneMatch?.[1] ?? 'tavern_interior';
+    const preset = getScenePreset(sceneId);
     const bgGradientStart = preset.bgGradientStart || '#3e2723';
     const bgGradientEnd = preset.bgGradientEnd || '#1a0e0a';
     const grad = ctx.createLinearGradient(0, 0, 0, height);
@@ -61,31 +63,19 @@ function ShotThumbnail({
     ctx.stroke();
 
     // Draw mini characters as colored circles
-    const placements = shot.placements;
-    const charColors: Record<string, string> = {
-      '张三': '#4caf50',
-      '赤蛟': '#f44336',
-      '李四': '#2196f3',
-      '白长老': '#9c27b0',
-      '王掌柜': '#ff9800',
-    };
+    const charColors = ['#4caf50', '#f44336', '#2196f3', '#9c27b0', '#ff9800'];
+    const characterNames = Array.from(
+      new Set(
+        Array.from(shot.dsl.matchAll(/\b(hero|villain|sidekick|elder|beast)\b/g)).map(
+          (match) => match[1],
+        ),
+      ),
+    );
 
-    placements.forEach((p, i) => {
-      const semanticMap: Record<string, number> = {
-        'far-left': 0.1,
-        'left-third': 0.2,
-        'left': 0.3,
-        'center-left': 0.4,
-        'center': 0.5,
-        'center-right': 0.6,
-        'right': 0.7,
-        'right-third': 0.8,
-        'far-right': 0.9,
-      };
-      const xFrac = semanticMap[p.position?.semantic ?? 'center'] ?? 0.5;
-      const cx = xFrac * width;
+    characterNames.forEach((name, i) => {
+      const cx = ((i + 1) / (characterNames.length + 1)) * width;
       const cy = floorY - 6;
-      const color = charColors[p.character] ?? '#aaa';
+      const color = charColors[i % charColors.length] ?? '#aaa';
 
       // Head
       ctx.beginPath();
@@ -103,15 +93,8 @@ function ShotThumbnail({
     });
 
     // Camera indicator
-    let cameraType = 'wide';
-    for (const te of shot.timeline) {
-      for (const cmd of te.commands) {
-        if (cmd.type === 'camera') {
-          cameraType = (cmd as CameraCommand).cameraType;
-          break;
-        }
-      }
-    }
+    const cameraMatch = shot.dsl.match(/\bcamera\s+([\w-]+)/);
+    const cameraType = cameraMatch?.[1] ?? 'wide';
 
     // Show camera frame overlay for non-wide
     if (cameraType !== 'wide') {
@@ -229,7 +212,7 @@ function ShotListItem({
   onDragOver,
   onDrop,
 }: {
-  shot: Shot;
+  shot: DslShot;
   index: number;
   isActive: boolean;
   isDragOver: boolean;
@@ -270,12 +253,18 @@ function ShotListItem({
         <div className="shotlist-item-meta">
           <span className="shotlist-item-duration">{shot.duration}s</span>
           <span className="shotlist-item-sep">|</span>
-          <span className="shotlist-item-set">{shot.set}</span>
+          <span className="shotlist-item-set">{shot.label}</span>
         </div>
         <div className="shotlist-item-chars">
-          {shot.placements.map((p) => (
-            <span key={p.character} className="shotlist-item-char-tag">
-              {p.character}
+          {Array.from(
+            new Set(
+              Array.from(shot.dsl.matchAll(/\b(hero|villain|sidekick|elder|beast)\b/g)).map(
+                (match) => match[1],
+              ),
+            ),
+          ).map((character) => (
+            <span key={character} className="shotlist-item-char-tag">
+              {character}
             </span>
           ))}
         </div>
@@ -305,18 +294,18 @@ export default function ShotList() {
       .filter(
         ({ s }) =>
           s.id.toLowerCase().includes(q) ||
-          s.set.toLowerCase().includes(q) ||
-          s.placements.some((p) => p.character.toLowerCase().includes(q)),
+          s.label.toLowerCase().includes(q) ||
+          s.dsl.toLowerCase().includes(q),
       )
       .map(({ i }) => i);
   }, [shots, searchQuery]);
 
   const handleSelect = useCallback(
     (index: number) => {
-      dispatch({ type: 'SET_CURRENT_SHOT', index });
+      dispatch({ type: 'SELECT_SHOT', index });
       dispatch({
         type: 'SELECT_ELEMENT',
-        element: { type: 'shot', shotIndex: index, id: shots[index]?.id ?? '' },
+        element: { type: 'action', shotIndex: index, id: shots[index]?.id ?? '' },
       });
     },
     [dispatch, shots],
@@ -337,27 +326,50 @@ export default function ShotList() {
 
       switch (action) {
         case 'duplicate':
-          dispatch({ type: 'DUPLICATE_SHOT', index: idx });
+          dispatch({
+            type: 'ADD_SHOT',
+            shot: {
+              ...shots[idx],
+              id: `${shots[idx]?.id ?? 'shot'}_copy`,
+              label: `${shots[idx]?.label ?? 'Shot'} Copy`,
+            },
+          });
           break;
         case 'insert_before':
-          dispatch({ type: 'ADD_SHOT', afterIndex: idx - 1 });
+          dispatch({
+            type: 'ADD_SHOT',
+            shot: {
+              id: `shot_${Date.now()}`,
+              label: 'New Shot',
+              dsl: 'scene tavern_interior',
+              duration: 3,
+            },
+          });
           break;
         case 'insert_after':
-          dispatch({ type: 'ADD_SHOT', afterIndex: idx });
+          dispatch({
+            type: 'ADD_SHOT',
+            shot: {
+              id: `shot_${Date.now()}`,
+              label: 'New Shot',
+              dsl: 'scene tavern_interior',
+              duration: 3,
+            },
+          });
           break;
         case 'move_up':
           if (idx > 0) {
-            dispatch({ type: 'REORDER_SHOT', fromIndex: idx, toIndex: idx - 1 });
+            dispatch({ type: 'REORDER_SHOTS', fromIndex: idx, toIndex: idx - 1 });
           }
           break;
         case 'move_down':
           if (idx < shots.length - 1) {
-            dispatch({ type: 'REORDER_SHOT', fromIndex: idx, toIndex: idx + 1 });
+            dispatch({ type: 'REORDER_SHOTS', fromIndex: idx, toIndex: idx + 1 });
           }
           break;
         case 'delete':
           if (shots.length > 1) {
-            dispatch({ type: 'REMOVE_SHOT', index: idx });
+            dispatch({ type: 'REMOVE_SHOT', shotId: shots[idx].id });
           }
           break;
       }
@@ -383,7 +395,7 @@ export default function ShotList() {
     (toIndex: number) => {
       if (dragState && dragState.fromIndex !== toIndex) {
         dispatch({
-          type: 'REORDER_SHOT',
+          type: 'REORDER_SHOTS',
           fromIndex: dragState.fromIndex,
           toIndex,
         });
@@ -394,8 +406,16 @@ export default function ShotList() {
   );
 
   const handleAddShot = useCallback(() => {
-    dispatch({ type: 'ADD_SHOT', afterIndex: shots.length - 1 });
-  }, [dispatch, shots.length]);
+    dispatch({
+      type: 'ADD_SHOT',
+      shot: {
+        id: `shot_${Date.now()}`,
+        label: 'New Shot',
+        dsl: 'scene tavern_interior',
+        duration: 3,
+      },
+    });
+  }, [dispatch]);
 
   // Scroll active shot into view
   useEffect(() => {

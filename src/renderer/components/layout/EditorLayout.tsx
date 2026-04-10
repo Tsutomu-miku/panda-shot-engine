@@ -124,18 +124,22 @@ function CollapsiblePanel({
 // ─── Main Editor Layout ─────────────────────────────────────
 
 export default function EditorLayout() {
-  const { state, dispatch } = useEditor();
-  const { panelLayout, viewMode } = state;
+  const { state } = useEditor();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Panel widths and heights
-  const [leftWidth, setLeftWidth] = useState(panelLayout.leftWidth);
-  const [rightWidth, setRightWidth] = useState(panelLayout.rightWidth);
-  const [timelineHeight, setTimelineHeight] = useState(panelLayout.timelineHeight);
-  const [leftSplitRatio, setLeftSplitRatio] = useState(panelLayout.leftSplitRatio);
-  const [rightSplitRatio, setRightSplitRatio] = useState(panelLayout.rightSplitRatio);
+  const DEFAULT_LEFT_WIDTH = 280;
+  const DEFAULT_RIGHT_WIDTH = 340;
+  const DEFAULT_TIMELINE_HEIGHT = 220;
+  const DEFAULT_LEFT_SPLIT_RATIO = 0.48;
+  const DEFAULT_RIGHT_SPLIT_RATIO = 0.52;
+  const collapsedPanels = useMemo(() => new Set<string>(), []);
 
-  const collapsedPanels = panelLayout.collapsedPanels;
+  // Panel widths and heights
+  const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
+  const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
+  const [timelineHeight, setTimelineHeight] = useState(DEFAULT_TIMELINE_HEIGHT);
+  const [leftSplitRatio, setLeftSplitRatio] = useState(DEFAULT_LEFT_SPLIT_RATIO);
+  const [rightSplitRatio, setRightSplitRatio] = useState(DEFAULT_RIGHT_SPLIT_RATIO);
 
   const isCollapsed = useCallback(
     (panelId: string) => collapsedPanels.has(panelId),
@@ -143,28 +147,11 @@ export default function EditorLayout() {
   );
 
   const toggleCollapse = useCallback(
-    (panelId: string) => {
-      dispatch({ type: 'TOGGLE_PANEL_COLLAPSE', panelId });
+    (_panelId: string) => {
+      // Current editor state does not persist collapsed panel layout yet.
     },
-    [dispatch],
+    [],
   );
-
-  // Sync local state back to global state (debounced)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      dispatch({
-        type: 'UPDATE_PANEL_LAYOUT',
-        layout: {
-          leftWidth,
-          rightWidth,
-          timelineHeight,
-          leftSplitRatio,
-          rightSplitRatio,
-        },
-      });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [leftWidth, rightWidth, timelineHeight, leftSplitRatio, rightSplitRatio, dispatch]);
 
   // Resize handlers with min/max clamping
   const handleLeftResize = useCallback((delta: number) => {
@@ -209,35 +196,11 @@ export default function EditorLayout() {
     isCollapsed('properties') && isCollapsed('dsl') ? 32 : rightWidth;
 
   // View mode determines what shows in the center
-  const renderCenterPanel = () => {
-    switch (viewMode) {
-      case 'preview':
-        return (
-          <div className="layout-center-full">
-            <CanvasPreview />
-          </div>
-        );
-      case 'split':
-        return (
-          <div className="layout-center-split">
-            <div className="layout-center-split-top">
-              <CanvasPreview />
-            </div>
-            <Divider direction="horizontal" onResize={() => {}} />
-            <div className="layout-center-split-bottom">
-              <DslEditor />
-            </div>
-          </div>
-        );
-      case 'edit':
-      default:
-        return (
-          <div className="layout-center-full">
-            <CanvasPreview />
-          </div>
-        );
-    }
-  };
+  const renderCenterPanel = () => (
+    <div className="layout-center-full">
+      <CanvasPreview />
+    </div>
+  );
 
   return (
     <div ref={containerRef} className="editor-layout">

@@ -168,7 +168,7 @@ function KeyboardShortcuts({ onOpenManager }: { onOpenManager: () => void }) {
 
       if (e.code === 'Space') {
         e.preventDefault();
-        dispatch({ type: state.isPlaying ? 'PAUSE' : 'PLAY' });
+        dispatch({ type: 'TOGGLE_PLAY' });
         return;
       }
 
@@ -190,19 +190,6 @@ function KeyboardShortcuts({ onOpenManager }: { onOpenManager: () => void }) {
         return;
       }
 
-      if (e.code === 'Digit1' && !ctrl) {
-        dispatch({ type: 'SET_VIEW_MODE', mode: 'edit' });
-        return;
-      }
-      if (e.code === 'Digit2' && !ctrl) {
-        dispatch({ type: 'SET_VIEW_MODE', mode: 'preview' });
-        return;
-      }
-      if (e.code === 'Digit3' && !ctrl) {
-        dispatch({ type: 'SET_VIEW_MODE', mode: 'split' });
-        return;
-      }
-
       // Ctrl+M: Open Manager View
       if (ctrl && e.code === 'KeyM') {
         e.preventDefault();
@@ -212,15 +199,15 @@ function KeyboardShortcuts({ onOpenManager }: { onOpenManager: () => void }) {
 
       if (e.code === 'ArrowLeft' && !ctrl) {
         e.preventDefault();
-        dispatch({ type: 'SEEK', time: Math.max(0, state.currentTime - 0.1) });
+        dispatch({ type: 'SET_PLAYBACK_TIME', time: Math.max(0, state.playbackTime - 0.1) });
         return;
       }
       if (e.code === 'ArrowRight' && !ctrl) {
         e.preventDefault();
         const maxTime = currentShot?.duration ?? 0;
         dispatch({
-          type: 'SEEK',
-          time: Math.min(maxTime, state.currentTime + 0.1),
+          type: 'SET_PLAYBACK_TIME',
+          time: Math.min(maxTime, state.playbackTime + 0.1),
         });
         return;
       }
@@ -228,10 +215,7 @@ function KeyboardShortcuts({ onOpenManager }: { onOpenManager: () => void }) {
       if (e.code === 'ArrowUp' && !ctrl) {
         e.preventDefault();
         if (state.currentShotIndex > 0) {
-          dispatch({
-            type: 'SET_CURRENT_SHOT',
-            index: state.currentShotIndex - 1,
-          });
+          dispatch({ type: 'SELECT_SHOT', index: state.currentShotIndex - 1 });
         }
         return;
       }
@@ -239,46 +223,37 @@ function KeyboardShortcuts({ onOpenManager }: { onOpenManager: () => void }) {
         e.preventDefault();
         const maxIdx = (state.project?.shots.length ?? 1) - 1;
         if (state.currentShotIndex < maxIdx) {
-          dispatch({
-            type: 'SET_CURRENT_SHOT',
-            index: state.currentShotIndex + 1,
-          });
+          dispatch({ type: 'SELECT_SHOT', index: state.currentShotIndex + 1 });
         }
         return;
       }
 
       if (e.code === 'Home') {
         e.preventDefault();
-        dispatch({ type: 'SEEK', time: 0 });
+        dispatch({ type: 'SET_PLAYBACK_TIME', time: 0 });
         return;
       }
 
       if (e.code === 'End') {
         e.preventDefault();
-        dispatch({ type: 'SEEK', time: currentShot?.duration ?? 0 });
+        dispatch({ type: 'SET_PLAYBACK_TIME', time: currentShot?.duration ?? 0 });
         return;
       }
 
       if (ctrl && (e.code === 'Equal' || e.code === 'NumpadAdd')) {
         e.preventDefault();
-        dispatch({ type: 'SET_ZOOM', zoom: state.zoom + 25 });
+        dispatch({ type: 'SET_ZOOM', zoom: Math.min(4, state.zoom + 0.25) });
         return;
       }
       if (ctrl && (e.code === 'Minus' || e.code === 'NumpadSubtract')) {
         e.preventDefault();
-        dispatch({ type: 'SET_ZOOM', zoom: state.zoom - 25 });
+        dispatch({ type: 'SET_ZOOM', zoom: Math.max(0.1, state.zoom - 0.25) });
         return;
       }
 
       if (ctrl && e.code === 'Digit0') {
         e.preventDefault();
-        dispatch({ type: 'SET_ZOOM', zoom: 100 });
-        return;
-      }
-
-      if (ctrl && e.code === 'KeyN') {
-        e.preventDefault();
-        dispatch({ type: 'NEW_PROJECT' });
+        dispatch({ type: 'SET_ZOOM', zoom: 1 });
         return;
       }
     };
@@ -293,14 +268,22 @@ function KeyboardShortcuts({ onOpenManager }: { onOpenManager: () => void }) {
 // ─── Status Bar ─────────────────────────────────────────────
 
 function StatusBar({ onOpenManager }: { onOpenManager: () => void }) {
-  const { state, totalDuration } = useEditor();
+  const { state } = useEditor();
 
-  const shotCount = state.project?.shots.length ?? 0;
-  const charCount = state.project?.characters.length ?? 0;
-  const sceneCount = state.project?.scenes.length ?? 0;
-  const actionCount = state.project?.customActions.length ?? 0;
-  const errCount = state.dslErrors.length;
-  const warnCount = state.dslWarnings.length;
+  const shotCount = state.project?.shots?.length ?? 0;
+  const charCount = state.project?.characters?.length ?? 0;
+  const sceneCount = state.project?.scenes?.length ?? 0;
+  const actionCount = state.project?.customActions?.length ?? 0;
+  const errCount = 0;
+  const warnCount = 0;
+  const totalDuration = (state.project?.shots ?? []).reduce(
+    (sum, shot) => sum + (shot.duration ?? 0),
+    0,
+  );
+  const viewModeLabel = 'Edit Mode';
+  const zoomPercent = Math.round((state.zoom ?? 1) * 100);
+  const undoCount = state.undoStack?.length ?? 0;
+  const redoCount = state.redoStack?.length ?? 0;
 
   return (
     <div className="status-bar">
@@ -330,9 +313,7 @@ function StatusBar({ onOpenManager }: { onOpenManager: () => void }) {
         )}
       </div>
       <div className="status-bar-center">
-        {state.viewMode === 'edit' && 'Edit Mode'}
-        {state.viewMode === 'preview' && 'Preview Mode'}
-        {state.viewMode === 'split' && 'Split View'}
+        {viewModeLabel}
         <button
           className="status-manager-btn"
           onClick={onOpenManager}
@@ -356,10 +337,10 @@ function StatusBar({ onOpenManager }: { onOpenManager: () => void }) {
           <span className="status-ok">OK</span>
         )}
         <span className="status-sep">|</span>
-        <span className="status-item">Zoom: {state.zoom}%</span>
+        <span className="status-item">Zoom: {zoomPercent}%</span>
         <span className="status-sep">|</span>
         <span className="status-item">
-          Undo: {state.undoStack.length} | Redo: {state.redoStack.length}
+          Undo: {undoCount} | Redo: {redoCount}
         </span>
       </div>
     </div>
@@ -375,17 +356,22 @@ function AppInner() {
 
   const handleLoadDemo = useCallback(() => {
     try {
-      const shots = parseShots(FULL_DEMO_DSL);
       dispatch({
-        type: 'SET_PROJECT',
+        type: 'LOAD_PROJECT',
         project: {
           name: 'Panda Shot Engine — Demo',
-          shots,
+          shots: [
+            ...parseShots(FULL_DEMO_DSL).map((shot, index) => ({
+              id: shot.id,
+              label: `Shot ${index + 1}`,
+              dsl: serializeShots([shot]),
+              duration: shot.duration,
+            })),
+          ],
           characters: [...DEMO_CHARACTERS],
           scenes: [...DEMO_SCENES],
           customActions: [],
         },
-        dslText: FULL_DEMO_DSL,
       });
     } catch (err) {
       console.error('Failed to load demo:', err);
@@ -394,7 +380,23 @@ function AppInner() {
   }, [dispatch]);
 
   const handleNewProject = useCallback(() => {
-    dispatch({ type: 'NEW_PROJECT' });
+    dispatch({
+      type: 'LOAD_PROJECT',
+      project: {
+        name: 'Untitled Project',
+        shots: [
+          {
+            id: 'shot_001',
+            label: 'Shot 1',
+            dsl: 'scene tavern_interior',
+            duration: 3,
+          },
+        ],
+        characters: [...DEMO_CHARACTERS],
+        scenes: [...DEMO_SCENES],
+        customActions: [],
+      },
+    });
     setShowSplash(false);
   }, [dispatch]);
 
@@ -421,7 +423,7 @@ function AppInner() {
       <Toolbar />
       <EditorLayout />
       <StatusBar onOpenManager={handleOpenManager} />
-      {showManager && <ManagerView onClose={handleCloseManager} />}
+      {showManager && <ManagerView open={showManager} onClose={handleCloseManager} />}
     </div>
   );
 }

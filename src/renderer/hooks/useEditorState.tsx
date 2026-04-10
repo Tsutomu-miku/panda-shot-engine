@@ -7,10 +7,11 @@
 import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
 import { CharacterAsset, SceneAsset, DslShot, PandaProject, ExpressionSet } from '../../core/project/types';
 import { ActionDefinition } from '../../core/skeleton/types';
-import { createDemoProject } from '../../demo/demo-project';
+import { createDemoProject, DEMO_CHARACTERS, DEMO_SCENES } from '../../demo/demo-project';
 
 // Re-export types for convenience
 export type { CharacterAsset, SceneAsset, DslShot, PandaProject, ExpressionSet };
+export { DEMO_CHARACTERS, DEMO_SCENES };
 
 // ─── Selection ──────────────────────────────────────────────
 
@@ -579,13 +580,23 @@ const initialState: EditorState = {
 interface EditorContextValue {
   state: EditorState;
   dispatch: React.Dispatch<EditorAction>;
+  currentShot: DslShot | null;
+  totalDuration: number;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
 
 export function EditorProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(editorReducer, initialState);
-  const value = useMemo(() => ({ state, dispatch }), [state]);
+  const currentShot = state.project.shots[state.currentShotIndex] ?? null;
+  const totalDuration = useMemo(
+    () => state.project.shots.reduce((sum, shot) => sum + (shot.duration ?? 0), 0),
+    [state.project.shots],
+  );
+  const value = useMemo(
+    () => ({ state, dispatch, currentShot, totalDuration }),
+    [state, currentShot, totalDuration],
+  );
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;
 }
 

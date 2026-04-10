@@ -1,381 +1,229 @@
-/**
- * Character Manager — Image-based character management UI
- * 
- * Supports:
- * - Image upload for body parts (head, body, arms, legs)
- * - Character thumbnail upload/preview
- * - Expression sticker management (delegated to ExpressionManager)
- * - CRUD operations with undo/redo
- */
+// ============================================================
+// panda-shot-engine — Character Manager Component
+// Full CRUD for characters with image-based body parts
+// ============================================================
 
-import React, { useState, useCallback, useMemo, useRef } from 'react';
-import { useEditor, CharacterAsset } from '../../hooks/useEditorState';
-import { STANDARD_PARTS, ExpressionSet } from '../../../core/project/types';
+import React, { useState, useCallback, useRef } from 'react';
+import { useEditor } from '../../hooks/useEditorState';
+import type { CharacterAsset } from '../../../core/project/types';
 import './CharacterManager.css';
 
-/** Read a file as a data URL */
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+let _cid = 0;
+function genCharId(): string {
+  return `char_${Date.now().toString(36)}_${(++_cid).toString(36)}`;
 }
 
-// ─── Image Upload Slot ──────────────────────────────────
+// ─── Image Upload Slot ──────────────────────────────────────
 
-interface ImageSlotProps {
+const ImageSlot: React.FC<{
   label: string;
-  imageUrl?: string;
+  src?: string;
   onUpload: (dataUrl: string) => void;
-  onRemove: () => void;
+  onClear?: () => void;
   size?: number;
-}
-
-const ImageSlot: React.FC<ImageSlotProps> = ({ label, imageUrl, onUpload, onRemove, size = 64 }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+}> = ({ label, src, onUpload, onClear, size = 72 }) => {
+  const ref = useRef<HTMLInputElement>(null);
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    onUpload(dataUrl);
-    if (inputRef.current) inputRef.current.value = '';
-  }, [onUpload]);
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') onUpload(reader.result); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   return (
-    <div className="image-slot" style={{ width: size, height: size }}>
-      {imageUrl ? (
-        <div className="image-slot__preview">
-          <img src={imageUrl} alt={label} />
-          <div className="image-slot__overlay">
-            <button className="image-slot__btn" onClick={() => inputRef.current?.click()} title="Replace">↻</button>
-            <button className="image-slot__btn image-slot__btn--danger" onClick={onRemove} title="Remove">✕</button>
-          </div>
-        </div>
+    <div className="char-img-slot" style={{ width: size, height: size }}
+      onClick={() => ref.current?.click()}>
+      {src ? (
+        <>
+          <img src={src} alt={label} className="char-img-slot__img" />
+          {onClear && (
+            <button className="char-img-slot__clear" onClick={(ev) => { ev.stopPropagation(); onClear(); }}>×</button>
+          )}
+        </>
       ) : (
-        <button className="image-slot__empty" onClick={() => inputRef.current?.click()}>
-          <span className="image-slot__plus">+</span>
-          <span className="image-slot__label">{label}</span>
-        </button>
+        <div className="char-img-slot__empty">
+          <span>+</span>
+          <span className="char-img-slot__label">{label}</span>
+        </div>
       )}
-      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+      <input ref={ref} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
     </div>
   );
 };
 
-// ─── Character Form ─────────────────────────────────────
+// ─── Body Part Names ────────────────────────────────────────
 
-interface CharacterFormProps {
-  initial?: CharacterAsset;
-  onSave: (data: {
-    name: string;
-    style: CharacterAsset['style'];
-    skeletonType: string;
-    description: string;
-    parts: Record<string, string>;
-    thumbnail?: string;
-  }) => void;
-  onCancel: () => void;
-}
+const BODY_PARTS = ['head', 'body', 'left_arm', 'right_arm', 'left_leg', 'right_leg', 'face_base'] as const;
 
-const CharacterForm: React.FC<CharacterFormProps> = ({ initial, onSave, onCancel }) => {
-  const [name, setName] = useState(initial?.name ?? '');
-  const [style, setStyle] = useState<CharacterAsset['style']>(initial?.style ?? 'humanoid');
-  const [skeletonType, setSkeletonType] = useState(initial?.skeletonType ?? 'humanoid');
-  const [description, setDescription] = useState(initial?.description ?? '');
-  const [parts, setParts] = useState<Record<string, string>>(initial?.parts ?? {});
-  const [thumbnail, setThumbnail] = useState<string | undefined>(initial?.thumbnail);
+// ─── Character Manager ──────────────────────────────────────
 
-  const handlePartUpload = useCallback((partKey: string, dataUrl: string) => {
-    setParts((prev) => ({ ...prev, [partKey]: dataUrl }));
-  }, []);
+const CharacterManager: React.FC = () => {
+  const { state, dispatch } = useEditor();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newStyle, setNewStyle] = useState('panda-default');
 
-  const handlePartRemove = useCallback((partKey: string) => {
-    setParts((prev) => {
-      const next = { ...prev };
-      delete next[partKey];
-      return next;
-    });
-  }, []);
+  const characters: CharacterAsset[] = state.project?.characters ?? [];
+  const selected = characters.find((c) => c.id === selectedId);
 
-  const handleThumbnailUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    setThumbnail(dataUrl);
-  }, []);
+  const handleAdd = useCallback(() => {
+    if (!newName.trim()) return;
+    const char: CharacterAsset = {
+      id: genCharId(),
+      name: newName.trim(),
+      style: newStyle,
+      parts: {},
+      expressions: {},
+      skeletonType: 'humanoid',
+      appearanceItems: [],
+      appearancePresets: [],
+      color: '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0'),
+    };
+    dispatch({ type: 'ADD_CHARACTER', character: char });
+    setNewName('');
+    setShowAdd(false);
+    setSelectedId(char.id);
+  }, [newName, newStyle, dispatch]);
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    onSave({ name: name.trim(), style, skeletonType, description, parts, thumbnail });
-  }, [name, style, skeletonType, description, parts, thumbnail, onSave]);
+  const handleDelete = useCallback((id: string) => {
+    dispatch({ type: 'REMOVE_CHARACTER', characterId: id });
+    if (selectedId === id) setSelectedId(null);
+  }, [selectedId, dispatch]);
+
+  const handlePartUpload = useCallback((partName: string, dataUrl: string) => {
+    if (!selected) return;
+    const updated = { ...selected, parts: { ...selected.parts, [partName]: dataUrl } };
+    dispatch({ type: 'UPDATE_CHARACTER', character: updated });
+  }, [selected, dispatch]);
+
+  const handlePartClear = useCallback((partName: string) => {
+    if (!selected) return;
+    const parts = { ...selected.parts };
+    delete parts[partName];
+    dispatch({ type: 'UPDATE_CHARACTER', character: { ...selected, parts } });
+  }, [selected, dispatch]);
+
+  const handleFieldChange = useCallback((field: keyof CharacterAsset, value: string) => {
+    if (!selected) return;
+    dispatch({ type: 'UPDATE_CHARACTER', character: { ...selected, [field]: value } });
+  }, [selected, dispatch]);
 
   return (
-    <form className="manager-form" onSubmit={handleSubmit}>
-      <div className="manager-form__title">{initial ? 'Edit Character' : 'Create Character'}</div>
-      
-      {/* Thumbnail */}
-      <div className="manager-form__group">
-        <label className="manager-form__label">Thumbnail</label>
-        <div className="char-thumbnail-upload">
-          {thumbnail ? (
-            <div className="char-thumbnail-upload__preview">
-              <img src={thumbnail} alt="thumbnail" />
-              <button type="button" className="char-thumbnail-upload__remove" onClick={() => setThumbnail(undefined)}>✕</button>
+    <div className="char-manager">
+      {/* Left: Character List */}
+      <div className="char-manager__list">
+        <div className="char-manager__list-header">
+          <h3>Characters ({characters.length})</h3>
+          <button className="btn btn--primary btn--sm" onClick={() => setShowAdd(true)}>+ New</button>
+        </div>
+
+        {showAdd && (
+          <div className="char-add-form">
+            <input type="text" className="input-text" value={newName}
+              onChange={(e) => setNewName(e.target.value)} placeholder="Name..."
+              autoFocus onKeyDown={(e) => e.key === 'Enter' && handleAdd()} />
+            <select className="input-select" value={newStyle}
+              onChange={(e) => setNewStyle(e.target.value)}>
+              <option value="panda-default">Panda Default</option>
+              <option value="custom">Custom</option>
+            </select>
+            <div className="char-add-form__btns">
+              <button className="btn btn--primary btn--xs" onClick={handleAdd}>Add</button>
+              <button className="btn btn--xs" onClick={() => setShowAdd(false)}>Cancel</button>
             </div>
-          ) : (
-            <label className="char-thumbnail-upload__empty">
-              <span>+ Upload</span>
-              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleThumbnailUpload} />
-            </label>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
 
-      {/* Basic Info */}
-      <div className="manager-form__group">
-        <label className="manager-form__label">Name</label>
-        <input className="manager-form__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Character name..." autoFocus />
-      </div>
-
-      <div className="manager-form__row">
-        <div className="manager-form__group" style={{ flex: 1 }}>
-          <label className="manager-form__label">Style</label>
-          <select className="manager-form__input" value={style} onChange={(e) => setStyle(e.target.value as CharacterAsset['style'])}>
-            <option value="humanoid">Humanoid</option>
-            <option value="beast">Beast</option>
-            <option value="chibi">Chibi</option>
-            <option value="custom">Custom</option>
-          </select>
-        </div>
-        <div className="manager-form__group" style={{ flex: 1 }}>
-          <label className="manager-form__label">Skeleton</label>
-          <select className="manager-form__input" value={skeletonType} onChange={(e) => setSkeletonType(e.target.value)}>
-            <option value="humanoid">Humanoid</option>
-            <option value="beast">Beast</option>
-            <option value="chibi">Chibi</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="manager-form__group">
-        <label className="manager-form__label">Description</label>
-        <textarea className="manager-form__textarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Character description..." />
-      </div>
-
-      {/* Body Parts */}
-      <div className="manager-form__group">
-        <label className="manager-form__label">Body Parts (Upload images for each part)</label>
-        <div className="char-parts-grid">
-          {STANDARD_PARTS.map((part) => (
-            <div key={part.key} className="char-part-item">
-              <ImageSlot
-                label={part.label}
-                imageUrl={parts[part.key]}
-                onUpload={(url) => handlePartUpload(part.key, url)}
-                onRemove={() => handlePartRemove(part.key)}
-              />
-              <span className="char-part-item__label">{part.label}</span>
+        <div className="char-manager__items">
+          {characters.map((c) => (
+            <div key={c.id}
+              className={`char-list-item ${c.id === selectedId ? 'selected' : ''}`}
+              onClick={() => setSelectedId(c.id)}>
+              <div className="char-list-item__color" style={{ background: c.color || '#666' }} />
+              <div className="char-list-item__info">
+                <div className="char-list-item__name">{c.name}</div>
+                <div className="char-list-item__meta">
+                  {c.style} | {Object.keys(c.parts).length} parts | {Object.keys(c.expressions).length} expr
+                </div>
+              </div>
+              <button className="btn btn--xs btn--danger"
+                onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}>×</button>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="manager-form__actions">
-        <button type="submit" className="manager-btn manager-btn--primary">{initial ? 'Save' : 'Create'}</button>
-        <button type="button" className="manager-btn manager-btn--ghost" onClick={onCancel}>Cancel</button>
+      {/* Right: Detail */}
+      <div className="char-manager__detail">
+        {selected ? (
+          <>
+            <div className="char-detail-header">
+              <div className="char-detail-header__color"
+                style={{ background: selected.color || '#666' }} />
+              <div>
+                <input type="text" className="input-text char-detail-name"
+                  value={selected.name}
+                  onChange={(e) => handleFieldChange('name', e.target.value)} />
+                <div className="char-detail-meta">
+                  ID: {selected.id} | Skeleton: {selected.skeletonType}
+                </div>
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="char-detail-section">
+              <h4>Description</h4>
+              <textarea className="input-text char-detail-desc"
+                value={selected.description || ''}
+                onChange={(e) => handleFieldChange('description' as any, e.target.value)}
+                placeholder="Character description..." rows={2} />
+            </div>
+
+            {/* Body Parts */}
+            <div className="char-detail-section">
+              <h4>Body Parts ({Object.keys(selected.parts).length})</h4>
+              <div className="char-parts-grid">
+                {BODY_PARTS.map((part) => (
+                  <div key={part} className="char-part-item">
+                    <ImageSlot label={part} src={selected.parts[part]}
+                      onUpload={(url) => handlePartUpload(part, url)}
+                      onClear={selected.parts[part] ? () => handlePartClear(part) : undefined} />
+                    <span className="char-part-item__name">{part}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick Stats */}
+            <div className="char-detail-section">
+              <h4>Quick Stats</h4>
+              <div className="char-stats">
+                <div className="char-stat">
+                  <span className="char-stat__num">{Object.keys(selected.expressions).length}</span>
+                  <span className="char-stat__label">Expressions</span>
+                </div>
+                <div className="char-stat">
+                  <span className="char-stat__num">{selected.appearanceItems.length}</span>
+                  <span className="char-stat__label">Appearance Items</span>
+                </div>
+                <div className="char-stat">
+                  <span className="char-stat__num">{selected.appearancePresets.length}</span>
+                  <span className="char-stat__label">Presets</span>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="char-detail-empty">
+            Select a character to view details, or create a new one.
+          </div>
+        )}
       </div>
-    </form>
+    </div>
   );
 };
 
-// ─── Main Character Manager ─────────────────────────────
-
-export default function CharacterManager() {
-  const { state, dispatch } = useEditor();
-  const characters = state.project.characters;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<CharacterAsset | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [search, setSearch] = useState('');
-
-  const referencedIds = useMemo(() => {
-    const ids = new Set<string>();
-    const regex = /enter\s+(\w+)/g;
-    let m: RegExpExecArray | null;
-    const allDsl = state.project.shots.map((s) => s.dsl).join('\n');
-    while ((m = regex.exec(allDsl)) !== null) ids.add(m[1]);
-    return ids;
-  }, [state.project.shots]);
-
-  const filtered = useMemo(() => {
-    if (!search) return characters;
-    const q = search.toLowerCase();
-    return characters.filter(
-      (c) => c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q),
-    );
-  }, [characters, search]);
-
-  const handleCreate = useCallback((data: any) => {
-    const id = data.name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString(36);
-    const newChar: CharacterAsset = {
-      id,
-      name: data.name,
-      style: data.style,
-      parts: data.parts,
-      expressions: {},
-      skeletonType: data.skeletonType,
-      thumbnail: data.thumbnail,
-      description: data.description,
-    };
-    dispatch({ type: 'ADD_CHARACTER', character: newChar });
-    setIsCreating(false);
-  }, [dispatch]);
-
-  const handleUpdate = useCallback((data: any) => {
-    if (!editing) return;
-    dispatch({ type: 'UPDATE_CHARACTER', charId: editing.id, updates: {
-      name: data.name,
-      style: data.style,
-      skeletonType: data.skeletonType,
-      description: data.description,
-      thumbnail: data.thumbnail,
-    }});
-    // Update parts individually
-    for (const [key, val] of Object.entries(data.parts as Record<string, string>)) {
-      dispatch({ type: 'UPDATE_CHARACTER_PART', charId: editing.id, partKey: key, imageData: val });
-    }
-    setEditing(null);
-  }, [editing, dispatch]);
-
-  const handleDelete = useCallback((charId: string) => {
-    if (referencedIds.has(charId)) {
-      alert('Cannot delete: character is referenced in DSL shots');
-      return;
-    }
-    dispatch({ type: 'REMOVE_CHARACTER', charId });
-    if (selectedId === charId) setSelectedId(null);
-    if (editing?.id === charId) setEditing(null);
-  }, [dispatch, selectedId, editing, referencedIds]);
-
-  const handleDuplicate = useCallback((charId: string) => {
-    dispatch({ type: 'DUPLICATE_CHARACTER', charId });
-  }, [dispatch]);
-
-  const selectedChar = characters.find((c) => c.id === selectedId);
-  const partsCount = (c: CharacterAsset) => Object.keys(c.parts).length;
-  const exprCount = (c: CharacterAsset) => Object.keys(c.expressions).length;
-
-  return (
-    <div className="character-manager">
-      <div className="manager-header">
-        <span className="manager-header__title">Characters ({characters.length})</span>
-        <div className="manager-header__actions">
-          <button className="manager-btn manager-btn--primary" onClick={() => setIsCreating(true)}>+ New</button>
-        </div>
-      </div>
-
-      <div style={{ padding: '8px 8px 0' }}>
-        <input className="manager-form__input" placeholder="Search characters..." value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
-
-      <div className="manager-list">
-        {filtered.length === 0 && (
-          <div className="manager-empty">
-            <div className="manager-empty__icon">👤</div>
-            <div className="manager-empty__text">{search ? 'No matching characters' : 'No characters yet. Create one!'}</div>
-          </div>
-        )}
-        {filtered.map((char) => (
-          <div
-            key={char.id}
-            className={`manager-card ${selectedId === char.id ? 'selected' : ''}`}
-            onClick={() => setSelectedId(selectedId === char.id ? null : char.id)}
-          >
-            <div className="manager-card__avatar">
-              {char.thumbnail ? (
-                <img src={char.thumbnail} alt={char.name} className="manager-card__avatar-img" />
-              ) : (
-                <span className="manager-card__avatar-placeholder">{char.name[0]?.toUpperCase()}</span>
-              )}
-            </div>
-            <div className="manager-card__info">
-              <div className="manager-card__name">
-                {char.name}
-                {referencedIds.has(char.id) && <span className="ref-badge">IN USE</span>}
-              </div>
-              <div className="manager-card__meta">
-                {char.style} | {partsCount(char)} parts | {exprCount(char)} expressions
-              </div>
-            </div>
-            <div className="manager-card__actions">
-              <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); setEditing(char); }} title="Edit">✎</button>
-              <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); handleDuplicate(char.id); }} title="Duplicate">⧉</button>
-              <button className="manager-card__btn manager-card__btn--danger" onClick={(e) => { e.stopPropagation(); handleDelete(char.id); }} title="Delete">✕</button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Selected Character Detail */}
-      {selectedChar && !editing && !isCreating && (
-        <div className="char-detail">
-          <div className="char-detail__header">
-            {selectedChar.thumbnail && <img src={selectedChar.thumbnail} alt="" className="char-detail__thumb" />}
-            <div>
-              <div className="char-detail__name">{selectedChar.name}</div>
-              <div className="char-detail__meta">{selectedChar.style} | {selectedChar.skeletonType}</div>
-            </div>
-          </div>
-          {selectedChar.description && <p className="char-detail__desc">{selectedChar.description}</p>}
-          <div className="char-detail__section">
-            <div className="char-detail__section-title">Body Parts ({partsCount(selectedChar)})</div>
-            <div className="char-parts-grid char-parts-grid--small">
-              {STANDARD_PARTS.map((part) => (
-                <div key={part.key} className="char-part-item">
-                  <div className={`char-part-preview ${selectedChar.parts[part.key] ? '' : 'empty'}`}>
-                    {selectedChar.parts[part.key] ? (
-                      <img src={selectedChar.parts[part.key]} alt={part.label} />
-                    ) : (
-                      <span>—</span>
-                    )}
-                  </div>
-                  <span className="char-part-item__label">{part.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="char-detail__section">
-            <div className="char-detail__section-title">Expressions ({exprCount(selectedChar)})</div>
-            <div className="char-expr-grid">
-              {Object.values(selectedChar.expressions).map((expr) => (
-                <div key={expr.id} className="char-expr-chip">
-                  {expr.thumbnail ? (
-                    <img src={expr.thumbnail} alt={expr.name} className="char-expr-chip__img" />
-                  ) : (
-                    <span className="char-expr-chip__placeholder">😶</span>
-                  )}
-                  <span className="char-expr-chip__name">{expr.name}</span>
-                </div>
-              ))}
-              {exprCount(selectedChar) === 0 && <span className="char-detail__empty">No expressions yet</span>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Form */}
-      {isCreating && (
-        <CharacterForm onSave={handleCreate} onCancel={() => setIsCreating(false)} />
-      )}
-
-      {/* Edit Form */}
-      {editing && (
-        <CharacterForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />
-      )}
-    </div>
-  );
-}
+export default CharacterManager;

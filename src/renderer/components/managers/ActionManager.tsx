@@ -1,194 +1,289 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { useEditor } from '../../hooks/useEditorState';
-import { ActionDefinition } from '../../../core/skeleton/types';
-import { getActionIds, getAction } from '../../../core/skeleton/action-library';
+// ============================================================
+// panda-shot-engine — Action Manager Component
+// Browse, filter, inspect actions with keyframe visualization
+// ============================================================
+
+import React, { useState, useMemo, useCallback } from 'react';
+import { BUILTIN_ACTIONS, getActionsByCategory, searchActions } from '../../../core/skeleton/action-library';
+import type { ActionDefinition, ActionKeyframe } from '../../../core/skeleton/types';
+import type { ActionCategory } from '../../../core/project/types';
+import { ACTION_CATEGORIES } from '../../../core/project/types';
 import './ActionManager.css';
 
-const EASING_OPTIONS = [
-  'linear', 'ease-in', 'ease-out', 'ease-in-out',
-  'bounce', 'elastic', 'overshoot',
-];
+// ─── Category Colors ────────────────────────────────────────
 
-interface EditingAction {
-  id: string | null;
-  name: string;
+const CATEGORY_COLORS: Record<ActionCategory, string> = {
+  movement: '#3b82f6',
+  combat: '#ef4444',
+  emotion: '#f59e0b',
+  gesture: '#10b981',
+  idle: '#64748b',
+  custom: '#a855f7',
+};
+
+// ─── Keyframe Timeline Visualizer ───────────────────────────
+
+const KeyframeTimeline: React.FC<{
+  keyframes: ActionKeyframe[];
   duration: number;
-  loop: boolean;
-  easing: string;
-  isBuiltIn: boolean;
-}
+}> = ({ keyframes, duration }) => {
+  const width = 300;
+  const height = 32;
 
-export default function ActionManager() {
-  const { state, dispatch } = useEditor();
-  const customActions = state.project?.customActions ?? [];
+  return (
+    <div className="kf-timeline">
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        {/* Track line */}
+        <line x1="8" y1={height / 2} x2={width - 8} y2={height / 2}
+          stroke="#334155" strokeWidth="2" />
+        {/* Keyframe dots */}
+        {keyframes.map((kf, i) => {
+          const x = 8 + ((kf.time / duration) * (width - 16));
+          const boneCount = Object.keys(kf.boneStates).length;
+          return (
+            <g key={i}>
+              <circle cx={x} cy={height / 2} r={5} fill={CATEGORY_COLORS.movement}
+                stroke="#e2e8f0" strokeWidth="1.5" />
+              <text x={x} y={height / 2 - 8} textAnchor="middle"
+                fill="#94a3b8" fontSize="8">{kf.time.toFixed(1)}s</text>
+              <text x={x} y={height / 2 + 14} textAnchor="middle"
+                fill="#64748b" fontSize="7">{boneCount}b</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
+
+// ─── Bone Inspector ─────────────────────────────────────────
+
+const BoneInspector: React.FC<{ keyframe: ActionKeyframe }> = ({ keyframe }) => {
+  const bones = Object.entries(keyframe.boneStates);
+  if (bones.length === 0) return <div className="bone-empty">No bone states</div>;
+
+  return (
+    <div className="bone-inspector">
+      <table className="bone-table">
+        <thead>
+          <tr>
+            <th>Bone</th>
+            <th>Rot°</th>
+            <th>Tx</th>
+            <th>Ty</th>
+            <th>Sx</th>
+            <th>Sy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bones.map(([name, bs]) => (
+            <tr key={name}>
+              <td className="bone-name">{name}</td>
+              <td>{(bs.rotation * 180 / Math.PI).toFixed(1)}</td>
+              <td>{bs.translateX.toFixed(1)}</td>
+              <td>{bs.translateY.toFixed(1)}</td>
+              <td>{bs.scaleX.toFixed(2)}</td>
+              <td>{bs.scaleY.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+// ─── Action Card ────────────────────────────────────────────
+
+const ActionCard: React.FC<{
+  action: ActionDefinition;
+  isSelected: boolean;
+  onSelect: () => void;
+}> = ({ action, isSelected, onSelect }) => {
+  const cat = action.category ?? 'custom';
+  const color = CATEGORY_COLORS[cat];
+
+  return (
+    <div className={`action-card ${isSelected ? 'selected' : ''}`}
+      onClick={onSelect}>
+      <div className="action-card__color-bar" style={{ background: color }} />
+      <div className="action-card__body">
+        <div className="action-card__header">
+          <span className="action-card__name">{action.name}</span>
+          <span className="action-card__badge" style={{ background: color + '30', color }}>
+            {cat}
+          </span>
+        </div>
+        <div className="action-card__meta">
+          {action.duration.toFixed(1)}s | {action.keyframes.length} keyframes | {action.loop ? 'Loop' : 'Once'}
+        </div>
+        {action.tags && action.tags.length > 0 && (
+          <div className="action-card__tags">
+            {action.tags.map((t) => (
+              <span key={t} className="action-tag">{t}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── Main Action Manager ────────────────────────────────────
+
+const ActionManager: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<EditingAction | null>(null);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'builtin' | 'custom'>('all');
+  const [filterCategory, setFilterCategory] = useState<ActionCategory | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedKeyframe, setExpandedKeyframe] = useState<number | null>(null);
 
-  const builtInActions: ActionDefinition[] = useMemo(() => {
-    return getActionIds().map((id) => getAction(id)!);
-  }, []);
-
-  const allActions = useMemo(() => {
-    return [...builtInActions, ...customActions];
-  }, [builtInActions, customActions]);
-
-  const referencedIds = useMemo(() => {
-    const ids = new Set<string>();
-    const regex = /action\s+(\w+)/g;
-    let m: RegExpExecArray | null;
-    while ((m = regex.exec(state.dslText)) !== null) ids.add(m[1]);
-    return ids;
-  }, [state.dslText]);
-
-  const filtered = useMemo(() => {
-    let list = allActions;
-    if (filter === 'builtin') list = builtInActions;
-    if (filter === 'custom') list = customActions;
-    if (!search) return list;
-    const q = search.toLowerCase();
-    return list.filter((a) => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q));
-  }, [allActions, builtInActions, customActions, search, filter]);
-
-  const isBuiltIn = useCallback((id: string) => getActionIds().includes(id), []);
-
-  const startCreate = useCallback(() => {
-    setEditing({ id: null, name: '', duration: 1.0, loop: false, easing: 'ease-in-out', isBuiltIn: false });
-  }, []);
-
-  const startEdit = useCallback((action: ActionDefinition) => {
-    setEditing({
-      id: action.id, name: action.name, duration: action.duration,
-      loop: action.loop, easing: action.easing, isBuiltIn: isBuiltIn(action.id),
-    });
-    setSelectedId(action.id);
-  }, [isBuiltIn]);
-
-  const handleSave = useCallback(() => {
-    if (!editing || !editing.name.trim()) return;
-    if (editing.isBuiltIn) return; // cannot edit built-in
-    if (editing.id === null) {
-      dispatch({ type: 'ADD_CUSTOM_ACTION', action: {
-        id: 'custom_' + editing.name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString(36),
-        name: editing.name.trim(), duration: editing.duration,
-        loop: editing.loop, easing: editing.easing,
-        keyframes: [{ time: 0, boneStates: {} }, { time: 1, boneStates: {} }],
-      }});
-    } else {
-      dispatch({ type: 'UPDATE_CUSTOM_ACTION', actionId: editing.id, updates: {
-        name: editing.name.trim(), duration: editing.duration,
-        loop: editing.loop, easing: editing.easing,
-      }});
+  const filteredActions = useMemo(() => {
+    let actions = BUILTIN_ACTIONS;
+    if (filterCategory !== 'all') {
+      actions = getActionsByCategory(filterCategory);
     }
-    setEditing(null);
-  }, [editing, dispatch]);
+    if (searchQuery) {
+      actions = searchActions(searchQuery);
+      if (filterCategory !== 'all') {
+        actions = actions.filter((a) => a.category === filterCategory);
+      }
+    }
+    return actions;
+  }, [filterCategory, searchQuery]);
 
-  const handleDelete = useCallback((actionId: string) => {
-    if (isBuiltIn(actionId)) { alert('Cannot delete built-in actions'); return; }
-    if (referencedIds.has(actionId)) { alert('Cannot delete: action is referenced in DSL'); return; }
-    dispatch({ type: 'REMOVE_CUSTOM_ACTION', actionId });
-    if (selectedId === actionId) setSelectedId(null);
-    if (editing?.id === actionId) setEditing(null);
-  }, [dispatch, selectedId, editing, isBuiltIn, referencedIds]);
-
-  const handleDuplicate = useCallback((actionId: string) => {
-    dispatch({ type: 'DUPLICATE_CUSTOM_ACTION', actionId });
-  }, [dispatch]);
+  const selectedAction = useMemo(
+    () => BUILTIN_ACTIONS.find((a) => a.id === selectedId),
+    [selectedId],
+  );
 
   return (
     <div className="action-manager">
-      <div className="manager-header">
-        <span className="manager-header__title">Actions ({allActions.length})</span>
-        <div className="manager-header__actions">
-          <button className="manager-btn manager-btn--primary" onClick={startCreate}>+ New</button>
+      {/* Left: Action list */}
+      <div className="action-manager__list">
+        <div className="action-list-header">
+          <h3>Actions ({filteredActions.length})</h3>
         </div>
-      </div>
 
-      <div style={{ padding: '8px 8px 0' }}>
-        <input className="manager-form__input" placeholder="Search actions..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-          {(['all', 'builtin', 'custom'] as const).map((f) => (
-            <button key={f} className={`easing-option ${filter === f ? 'active' : ''}`}
-              onClick={() => setFilter(f)}>
-              {f === 'all' ? 'All' : f === 'builtin' ? 'Built-in' : 'Custom'}
+        {/* Category filters */}
+        <div className="action-filters">
+          <button className={`filter-chip ${filterCategory === 'all' ? 'active' : ''}`}
+            onClick={() => setFilterCategory('all')}>All</button>
+          {ACTION_CATEGORIES.map((cat) => (
+            <button key={cat}
+              className={`filter-chip ${filterCategory === cat ? 'active' : ''}`}
+              style={{ '--fc': CATEGORY_COLORS[cat] } as React.CSSProperties}
+              onClick={() => setFilterCategory(cat)}>
+              {cat} ({getActionsByCategory(cat).length})
             </button>
           ))}
         </div>
+
+        {/* Search */}
+        <input type="text" className="input-text action-search"
+          placeholder="Search by name or tag..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)} />
+
+        {/* List */}
+        <div className="action-list-items">
+          {filteredActions.map((action) => (
+            <ActionCard key={action.id} action={action}
+              isSelected={action.id === selectedId}
+              onSelect={() => { setSelectedId(action.id); setExpandedKeyframe(null); }} />
+          ))}
+          {filteredActions.length === 0 && (
+            <div className="action-empty">No actions match the current filter.</div>
+          )}
+        </div>
       </div>
 
-      <div className="manager-list">
-        {filtered.length === 0 && (
-          <div className="manager-empty">
-            <div className="manager-empty__icon">A</div>
-            <div className="manager-empty__text">{search ? 'No matching actions' : 'No actions'}</div>
+      {/* Right: Detail */}
+      <div className="action-manager__detail">
+        {selectedAction ? (
+          <>
+            <div className="action-detail-header">
+              <h3>{selectedAction.name}</h3>
+              <span className="action-detail-badge"
+                style={{ background: CATEGORY_COLORS[selectedAction.category ?? 'custom'] }}>
+                {selectedAction.category ?? 'custom'}
+              </span>
+            </div>
+
+            {selectedAction.description && (
+              <p className="action-detail-desc">{selectedAction.description}</p>
+            )}
+
+            <div className="action-detail-props">
+              <div className="action-prop">
+                <span className="action-prop__label">Duration</span>
+                <span className="action-prop__value">{selectedAction.duration.toFixed(2)}s</span>
+              </div>
+              <div className="action-prop">
+                <span className="action-prop__label">Loop</span>
+                <span className="action-prop__value">{selectedAction.loop ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="action-prop">
+                <span className="action-prop__label">Keyframes</span>
+                <span className="action-prop__value">{selectedAction.keyframes.length}</span>
+              </div>
+              {selectedAction.targetSkeleton && (
+                <div className="action-prop">
+                  <span className="action-prop__label">Target</span>
+                  <span className="action-prop__value">{selectedAction.targetSkeleton}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Tags */}
+            {selectedAction.tags && selectedAction.tags.length > 0 && (
+              <div className="action-detail-tags">
+                {selectedAction.tags.map((t) => (
+                  <span key={t} className="action-tag action-tag--lg">{t}</span>
+                ))}
+              </div>
+            )}
+
+            {/* Keyframe Timeline */}
+            <div className="action-detail-section">
+              <h4>Keyframe Timeline</h4>
+              <KeyframeTimeline keyframes={selectedAction.keyframes}
+                duration={selectedAction.duration} />
+            </div>
+
+            {/* Keyframe List with Bone Inspector */}
+            <div className="action-detail-section">
+              <h4>Keyframe Details</h4>
+              <div className="kf-list">
+                {selectedAction.keyframes.map((kf, i) => (
+                  <div key={i} className="kf-item">
+                    <div className="kf-item-header"
+                      onClick={() => setExpandedKeyframe(expandedKeyframe === i ? null : i)}>
+                      <span className="kf-item-time">
+                        t={kf.time.toFixed(2)}s
+                      </span>
+                      <span className="kf-item-bones">
+                        {Object.keys(kf.boneStates).length} bones
+                      </span>
+                      {kf.easing && <span className="kf-item-easing">{kf.easing}</span>}
+                      <span className="kf-item-expand">
+                        {expandedKeyframe === i ? '▼' : '▶'}
+                      </span>
+                    </div>
+                    {expandedKeyframe === i && (
+                      <BoneInspector keyframe={kf} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="action-detail-empty">
+            Select an action to view its details, keyframes, and bone states.
           </div>
         )}
-        {filtered.map((action) => {
-          const bi = isBuiltIn(action.id);
-          return (
-            <div key={action.id} className={`manager-card ${selectedId === action.id ? 'selected' : ''}`}
-              onClick={() => setSelectedId(selectedId === action.id ? null : action.id)}>
-              <div className="manager-card__avatar" style={{ backgroundColor: bi ? '#313244' : '#7c3aed40', color: bi ? '#6c7086' : '#b4befe' }}>
-                {action.loop ? '↻' : '→'}
-              </div>
-              <div className="manager-card__info">
-                <div className="manager-card__name">
-                  {action.name}
-                  <span className={`action-badge ${bi ? 'action-badge--builtin' : 'action-badge--custom'}`}>
-                    {bi ? 'BUILT-IN' : 'CUSTOM'}
-                  </span>
-                  {action.loop && <span className="action-badge action-badge--loop">LOOP</span>}
-                  {referencedIds.has(action.id) && <span className="ref-badge">IN USE</span>}
-                </div>
-                <div className="manager-card__meta">
-                  {action.duration}s | {action.keyframes.length} keyframes | {action.easing}
-                </div>
-              </div>
-              <div className="manager-card__actions">
-                {!bi && <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); startEdit(action); }}>E</button>}
-                <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); handleDuplicate(action.id); }}>D</button>
-                {!bi && <button className="manager-card__btn manager-card__btn--danger" onClick={(e) => { e.stopPropagation(); handleDelete(action.id); }}>X</button>}
-              </div>
-            </div>
-          );
-        })}
       </div>
-
-      {editing && !editing.isBuiltIn && (
-        <div className="manager-form">
-          <div className="manager-form__title">{editing.id === null ? 'Create Action' : 'Edit Action'}</div>
-          <div className="manager-form__group">
-            <label className="manager-form__label">Name</label>
-            <input className="manager-form__input" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
-          </div>
-          <div className="manager-form__group">
-            <label className="manager-form__label">Duration (seconds)</label>
-            <input className="manager-form__input" type="number" min="0.1" step="0.1" value={editing.duration}
-              onChange={(e) => setEditing({ ...editing, duration: parseFloat(e.target.value) || 1 })} />
-          </div>
-          <div className="manager-form__group">
-            <label className="manager-form__label">Loop</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <input type="checkbox" checked={editing.loop} onChange={(e) => setEditing({ ...editing, loop: e.target.checked })} />
-              <span style={{ fontSize: 12, color: '#a6adc8' }}>Loop animation continuously</span>
-            </label>
-          </div>
-          <div className="manager-form__group">
-            <label className="manager-form__label">Easing</label>
-            <div className="easing-select">
-              {EASING_OPTIONS.map((e) => (
-                <button key={e} className={`easing-option ${editing.easing === e ? 'active' : ''}`}
-                  onClick={() => setEditing({ ...editing, easing: e })}>{e}</button>
-              ))}
-            </div>
-          </div>
-          <div className="manager-form__actions">
-            <button className="manager-btn manager-btn--primary" onClick={handleSave}>{editing.id === null ? 'Create' : 'Save'}</button>
-            <button className="manager-btn manager-btn--ghost" onClick={() => setEditing(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
     </div>
   );
-}
+};
+
+export default ActionManager;

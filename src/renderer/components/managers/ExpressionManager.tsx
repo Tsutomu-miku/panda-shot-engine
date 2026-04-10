@@ -1,347 +1,251 @@
-/**
- * Expression Manager — Image sticker-based expression management
- * 
- * Core concept: Expressions are facial sticker images that overlay on the character.
- * Each expression has slots for eyes, mouth, eyebrows, and full-face overlay.
- * Users upload images for each slot to create different expressions.
- */
+// ============================================================
+// panda-shot-engine — Expression Manager Component
+// Per-character expression sticker management (eyes, mouth,
+// eyebrows, overlays)
+// ============================================================
 
-import React, { useState, useCallback, useMemo, useRef } from 'react';
-import { useEditor, CharacterAsset, ExpressionSet } from '../../hooks/useEditorState';
-import { EXPRESSION_SLOTS } from '../../../core/project/types';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
+import { useEditor } from '../../hooks/useEditorState';
+import type { CharacterAsset, ExpressionSet } from '../../../core/project/types';
 import './ExpressionManager.css';
 
-/** Read a file as a data URL */
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+// ─── Image Upload Slot ──────────────────────────────────────
 
-// ─── Sticker Slot Upload ────────────────────────────────
-
-interface StickerSlotProps {
+const StickerSlot: React.FC<{
   label: string;
-  imageUrl?: string;
+  src?: string;
   onUpload: (dataUrl: string) => void;
-  onRemove: () => void;
-}
-
-const StickerSlot: React.FC<StickerSlotProps> = ({ label, imageUrl, onUpload, onRemove }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  onClear?: () => void;
+}> = ({ label, src, onUpload, onClear }) => {
+  const ref = useRef<HTMLInputElement>(null);
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    onUpload(dataUrl);
-    if (inputRef.current) inputRef.current.value = '';
-  }, [onUpload]);
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') onUpload(reader.result); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   return (
-    <div className="sticker-slot">
-      <div className="sticker-slot__preview">
-        {imageUrl ? (
-          <div className="sticker-slot__image-wrap">
-            <img src={imageUrl} alt={label} />
-            <div className="sticker-slot__actions">
-              <button className="sticker-slot__btn" onClick={() => inputRef.current?.click()} title="Replace">↻</button>
-              <button className="sticker-slot__btn sticker-slot__btn--danger" onClick={onRemove} title="Remove">✕</button>
-            </div>
-          </div>
-        ) : (
-          <button className="sticker-slot__upload" onClick={() => inputRef.current?.click()}>
-            <span className="sticker-slot__plus">+</span>
-          </button>
-        )}
-      </div>
-      <span className="sticker-slot__label">{label}</span>
-      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
-    </div>
-  );
-};
-
-// ─── Expression Card ────────────────────────────────────
-
-interface ExpressionCardProps {
-  expression: ExpressionSet;
-  charId: string;
-  isSelected: boolean;
-  isReferenced: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-}
-
-const ExpressionCard: React.FC<ExpressionCardProps> = ({
-  expression, charId, isSelected, isReferenced, onSelect, onDelete, onDuplicate,
-}) => {
-  const filledSlots = EXPRESSION_SLOTS.filter((s) => (expression as any)[s.key]);
-
-  return (
-    <div className={`expr-card ${isSelected ? 'selected' : ''}`} onClick={onSelect}>
-      <div className="expr-card__preview">
-        {expression.thumbnail ? (
-          <img src={expression.thumbnail} alt={expression.name} />
-        ) : (
-          <div className="expr-card__preview-grid">
-            {EXPRESSION_SLOTS.slice(0, 4).map((slot) => {
-              const img = (expression as any)[slot.key];
-              return (
-                <div key={slot.key} className="expr-card__mini-slot">
-                  {img ? <img src={img} alt={slot.label} /> : <span>—</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      <div className="expr-card__info">
-        <div className="expr-card__name">
-          {expression.name}
-          {isReferenced && <span className="ref-badge">IN USE</span>}
+    <div className="sticker-slot" onClick={() => ref.current?.click()}>
+      {src ? (
+        <>
+          <img src={src} alt={label} className="sticker-slot__img" />
+          {onClear && (
+            <button className="sticker-slot__clear"
+              onClick={(ev) => { ev.stopPropagation(); onClear(); }}>×</button>
+          )}
+        </>
+      ) : (
+        <div className="sticker-slot__empty">
+          <span>+</span>
+          <span>{label}</span>
         </div>
-        <div className="expr-card__meta">{filledSlots.length}/{EXPRESSION_SLOTS.length} stickers</div>
-      </div>
-      <div className="expr-card__actions">
-        <button className="manager-card__btn" onClick={(e) => { e.stopPropagation(); onDuplicate(); }} title="Duplicate">⧉</button>
-        <button className="manager-card__btn manager-card__btn--danger" onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Delete">✕</button>
-      </div>
+      )}
+      <input ref={ref} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
     </div>
   );
 };
 
-// ─── Main Expression Manager ────────────────────────────
+// ─── Sticker Part Names ─────────────────────────────────────
 
-export default function ExpressionManager() {
+const STICKER_PARTS = [
+  { key: 'eyesImage', label: '👁 Eyes' },
+  { key: 'mouthImage', label: '👄 Mouth' },
+  { key: 'eyebrowImage', label: '🤨 Eyebrows' },
+  { key: 'overlayImage', label: '✨ Overlay' },
+] as const;
+
+// ─── Expression Manager ─────────────────────────────────────
+
+const ExpressionManager: React.FC = () => {
   const { state, dispatch } = useEditor();
-  const characters = state.project.characters;
-  const [selectedCharId, setSelectedCharId] = useState<string>(characters[0]?.id ?? '');
-  const [selectedExprId, setSelectedExprId] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
+  const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
+  const [selectedExpr, setSelectedExpr] = useState<string | null>(null);
   const [newExprName, setNewExprName] = useState('');
-  const [search, setSearch] = useState('');
+  const [showAddExpr, setShowAddExpr] = useState(false);
 
-  const selectedChar = characters.find((c) => c.id === selectedCharId);
-  const expressions = selectedChar ? Object.values(selectedChar.expressions) : [];
+  const characters: CharacterAsset[] = state.project?.characters ?? [];
+  const selectedChar = useMemo(
+    () => characters.find((c) => c.id === selectedCharId) ?? characters[0] ?? null,
+    [characters, selectedCharId],
+  );
 
-  // Find expressions referenced in DSL
-  const referencedExprs = useMemo(() => {
-    const ids = new Set<string>();
-    const regex = /expression\s+(\w+)/g;
-    let m: RegExpExecArray | null;
-    const allDsl = state.project.shots.map((s) => s.dsl).join('\n');
-    while ((m = regex.exec(allDsl)) !== null) ids.add(m[1]);
-    return ids;
-  }, [state.project.shots]);
+  const expressions = selectedChar ? Object.entries(selectedChar.expressions) : [];
+  const activeExpr = selectedChar?.expressions[selectedExpr ?? ''];
 
-  const filtered = useMemo(() => {
-    if (!search) return expressions;
-    const q = search.toLowerCase();
-    return expressions.filter((e) => e.name.toLowerCase().includes(q));
-  }, [expressions, search]);
-
-  const selectedExpr = selectedChar?.expressions[selectedExprId ?? ''];
-
-  // ── Create Expression ──
-  const handleCreate = useCallback(() => {
-    if (!selectedCharId || !newExprName.trim()) return;
-    const id = newExprName.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString(36);
-    const expr: ExpressionSet = { id, name: newExprName.trim() };
-    dispatch({ type: 'ADD_EXPRESSION', charId: selectedCharId, expression: expr });
+  const handleAddExpression = useCallback(() => {
+    if (!selectedChar || !newExprName.trim()) return;
+    const expr: ExpressionSet = { name: newExprName.trim() };
+    dispatch({
+      type: 'SET_CHARACTER_EXPRESSION',
+      characterId: selectedChar.id,
+      expressionName: newExprName.trim(),
+      expression: expr,
+    });
+    setSelectedExpr(newExprName.trim());
     setNewExprName('');
-    setIsCreating(false);
-    setSelectedExprId(id);
-  }, [selectedCharId, newExprName, dispatch]);
+    setShowAddExpr(false);
+  }, [selectedChar, newExprName, dispatch]);
 
-  // ── Update Sticker Slot ──
-  const handleSlotUpload = useCallback((slot: 'eyesImage' | 'mouthImage' | 'eyebrowImage' | 'overlayImage', dataUrl: string) => {
-    if (!selectedCharId || !selectedExprId) return;
-    dispatch({ type: 'UPDATE_EXPRESSION_SLOT', charId: selectedCharId, exprId: selectedExprId, slot, imageData: dataUrl });
-  }, [selectedCharId, selectedExprId, dispatch]);
+  const handleDeleteExpression = useCallback((name: string) => {
+    if (!selectedChar) return;
+    dispatch({
+      type: 'REMOVE_CHARACTER_EXPRESSION',
+      characterId: selectedChar.id,
+      expressionName: name,
+    });
+    if (selectedExpr === name) setSelectedExpr(null);
+  }, [selectedChar, selectedExpr, dispatch]);
 
-  const handleSlotRemove = useCallback((slot: 'eyesImage' | 'mouthImage' | 'eyebrowImage' | 'overlayImage') => {
-    if (!selectedCharId || !selectedExprId) return;
-    dispatch({ type: 'UPDATE_EXPRESSION_SLOT', charId: selectedCharId, exprId: selectedExprId, slot, imageData: null });
-  }, [selectedCharId, selectedExprId, dispatch]);
+  const handleStickerUpload = useCallback((partKey: string, dataUrl: string) => {
+    if (!selectedChar || !selectedExpr || !activeExpr) return;
+    const updated: ExpressionSet = { ...activeExpr, [partKey]: dataUrl };
+    dispatch({
+      type: 'SET_CHARACTER_EXPRESSION',
+      characterId: selectedChar.id,
+      expressionName: selectedExpr,
+      expression: updated,
+    });
+  }, [selectedChar, selectedExpr, activeExpr, dispatch]);
 
-  // ── Update Expression Thumbnail ──
-  const handleThumbnailUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedCharId || !selectedExprId) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    dispatch({ type: 'UPDATE_EXPRESSION', charId: selectedCharId, exprId: selectedExprId, updates: { thumbnail: dataUrl } });
-  }, [selectedCharId, selectedExprId, dispatch]);
-
-  // ── Rename Expression ──
-  const [renaming, setRenaming] = useState(false);
-  const [renameTo, setRenameTo] = useState('');
-
-  const handleRename = useCallback(() => {
-    if (!selectedCharId || !selectedExprId || !renameTo.trim()) return;
-    dispatch({ type: 'UPDATE_EXPRESSION', charId: selectedCharId, exprId: selectedExprId, updates: { name: renameTo.trim() } });
-    setRenaming(false);
-  }, [selectedCharId, selectedExprId, renameTo, dispatch]);
+  const handleStickerClear = useCallback((partKey: string) => {
+    if (!selectedChar || !selectedExpr || !activeExpr) return;
+    const updated: ExpressionSet = { ...activeExpr, [partKey]: undefined } as any;
+    dispatch({
+      type: 'SET_CHARACTER_EXPRESSION',
+      characterId: selectedChar.id,
+      expressionName: selectedExpr,
+      expression: updated,
+    });
+  }, [selectedChar, selectedExpr, activeExpr, dispatch]);
 
   return (
-    <div className="expression-manager">
-      <div className="manager-header">
-        <span className="manager-header__title">Expressions</span>
-        <div className="manager-header__actions">
-          <button className="manager-btn manager-btn--primary" onClick={() => { setIsCreating(true); setNewExprName(''); }}>+ New</button>
-        </div>
-      </div>
-
-      {/* Character Selector */}
-      <div className="expr-char-selector">
-        <label className="expr-char-selector__label">Character:</label>
-        <div className="expr-char-chips">
-          {characters.map((c) => (
-            <button
-              key={c.id}
-              className={`expr-char-chip ${selectedCharId === c.id ? 'active' : ''}`}
-              onClick={() => { setSelectedCharId(c.id); setSelectedExprId(null); }}
-            >
-              {c.thumbnail ? (
-                <img src={c.thumbnail} alt={c.name} className="expr-char-chip__img" />
-              ) : (
-                <span className="expr-char-chip__letter">{c.name[0]}</span>
-              )}
-              <span>{c.name}</span>
-              <span className="expr-char-chip__count">{Object.keys(c.expressions).length}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Search */}
-      <div style={{ padding: '0 8px' }}>
-        <input className="manager-form__input" placeholder="Search expressions..." value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
-
-      {/* Expression List */}
-      <div className="manager-list">
-        {filtered.length === 0 && !isCreating && (
-          <div className="manager-empty">
-            <div className="manager-empty__icon">😶</div>
-            <div className="manager-empty__text">
-              {search ? 'No matching expressions' : selectedChar ? 'No expressions on this character' : 'Select a character first'}
-            </div>
-          </div>
-        )}
-        {filtered.map((expr) => (
-          <ExpressionCard
-            key={expr.id}
-            expression={expr}
-            charId={selectedCharId}
-            isSelected={selectedExprId === expr.id}
-            isReferenced={referencedExprs.has(expr.id) || referencedExprs.has(expr.name)}
-            onSelect={() => setSelectedExprId(selectedExprId === expr.id ? null : expr.id)}
-            onDelete={() => {
-              dispatch({ type: 'REMOVE_EXPRESSION', charId: selectedCharId, exprId: expr.id });
-              if (selectedExprId === expr.id) setSelectedExprId(null);
-            }}
-            onDuplicate={() => dispatch({ type: 'DUPLICATE_EXPRESSION', charId: selectedCharId, exprId: expr.id })}
-          />
+    <div className="expr-manager">
+      {/* Character selector */}
+      <div className="expr-char-bar">
+        <span className="expr-char-bar__label">Character:</span>
+        {characters.map((c) => (
+          <button key={c.id}
+            className={`expr-char-chip ${c.id === selectedChar?.id ? 'active' : ''}`}
+            style={{ '--c': c.color || '#666' } as React.CSSProperties}
+            onClick={() => { setSelectedCharId(c.id); setSelectedExpr(null); }}>
+            {c.name}
+          </button>
         ))}
       </div>
 
-      {/* Create Form */}
-      {isCreating && (
-        <div className="expr-create-form">
-          <div className="manager-form__title">New Expression</div>
-          <div className="manager-form__group">
-            <input
-              className="manager-form__input"
-              value={newExprName}
-              onChange={(e) => setNewExprName(e.target.value)}
-              placeholder="Expression name (e.g. happy, angry...)"
-              autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            />
+      <div className="expr-content">
+        {/* Left: Expression list */}
+        <div className="expr-list-panel">
+          <div className="expr-list-header">
+            <h3>Expressions ({expressions.length})</h3>
+            <button className="btn btn--primary btn--sm" onClick={() => setShowAddExpr(true)}>+ Add</button>
           </div>
-          <div className="manager-form__actions">
-            <button className="manager-btn manager-btn--primary" onClick={handleCreate} disabled={!newExprName.trim()}>Create</button>
-            <button className="manager-btn manager-btn--ghost" onClick={() => setIsCreating(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
 
-      {/* Selected Expression Detail — Sticker Slots */}
-      {selectedExpr && !isCreating && (
-        <div className="expr-detail">
-          <div className="expr-detail__header">
-            {renaming ? (
-              <div className="expr-detail__rename">
-                <input className="manager-form__input" value={renameTo} onChange={(e) => setRenameTo(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleRename()} autoFocus />
-                <button className="manager-btn manager-btn--primary" onClick={handleRename}>Save</button>
-                <button className="manager-btn manager-btn--ghost" onClick={() => setRenaming(false)}>Cancel</button>
+          {showAddExpr && (
+            <div className="expr-add-form">
+              <input type="text" className="input-text" value={newExprName}
+                onChange={(e) => setNewExprName(e.target.value)}
+                placeholder="e.g. happy, angry..." autoFocus
+                onKeyDown={(e) => e.key === 'Enter' && handleAddExpression()} />
+              <button className="btn btn--primary btn--xs" onClick={handleAddExpression}>Add</button>
+              <button className="btn btn--xs" onClick={() => setShowAddExpr(false)}>Cancel</button>
+            </div>
+          )}
+
+          <div className="expr-list-items">
+            {expressions.map(([name, expr]) => (
+              <div key={name}
+                className={`expr-list-item ${name === selectedExpr ? 'selected' : ''}`}
+                onClick={() => setSelectedExpr(name)}>
+                <div className="expr-list-item__preview">
+                  {expr.eyesImage ? (
+                    <img src={expr.eyesImage} alt={name} />
+                  ) : (
+                    <span>😀</span>
+                  )}
+                </div>
+                <div className="expr-list-item__info">
+                  <div className="expr-list-item__name">{name}</div>
+                  <div className="expr-list-item__parts">
+                    {expr.eyesImage ? '👁' : ''}
+                    {expr.mouthImage ? '👄' : ''}
+                    {expr.eyebrowImage ? '🤨' : ''}
+                    {expr.overlayImage ? '✨' : ''}
+                    {!expr.eyesImage && !expr.mouthImage && !expr.eyebrowImage && !expr.overlayImage ? 'No stickers' : ''}
+                  </div>
+                </div>
+                <button className="btn btn--xs btn--danger"
+                  onClick={(e) => { e.stopPropagation(); handleDeleteExpression(name); }}>×</button>
               </div>
-            ) : (
-              <div className="expr-detail__title-row">
-                <span className="expr-detail__title">{selectedExpr.name}</span>
-                <button className="manager-card__btn" onClick={() => { setRenaming(true); setRenameTo(selectedExpr.name); }}>✎</button>
-              </div>
+            ))}
+            {expressions.length === 0 && (
+              <div className="expr-empty">No expressions yet. Add one to get started.</div>
             )}
           </div>
-
-          {/* Thumbnail */}
-          <div className="expr-detail__section">
-            <div className="expr-detail__section-title">Thumbnail Preview</div>
-            <div className="expr-detail__thumbnail">
-              {selectedExpr.thumbnail ? (
-                <div className="expr-detail__thumb-preview">
-                  <img src={selectedExpr.thumbnail} alt="thumbnail" />
-                </div>
-              ) : (
-                <span className="expr-detail__thumb-empty">No thumbnail</span>
-              )}
-              <label className="manager-btn manager-btn--ghost">
-                Upload Thumbnail
-                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleThumbnailUpload} />
-              </label>
-            </div>
-          </div>
-
-          {/* Sticker Slots */}
-          <div className="expr-detail__section">
-            <div className="expr-detail__section-title">Facial Sticker Slots</div>
-            <p className="expr-detail__hint">Upload images for each facial part. These stickers will be overlaid on the character's face to create this expression.</p>
-            <div className="sticker-slots-grid">
-              {EXPRESSION_SLOTS.map((slot) => (
-                <StickerSlot
-                  key={slot.key}
-                  label={slot.label}
-                  imageUrl={(selectedExpr as any)[slot.key]}
-                  onUpload={(url) => handleSlotUpload(slot.key as any, url)}
-                  onRemove={() => handleSlotRemove(slot.key as any)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Expression Preview */}
-          <div className="expr-detail__section">
-            <div className="expr-detail__section-title">Preview</div>
-            <div className="expr-preview-canvas">
-              {selectedChar?.parts.head && (
-                <img src={selectedChar.parts.head} alt="head" className="expr-preview__base" />
-              )}
-              {selectedExpr.eyebrowImage && <img src={selectedExpr.eyebrowImage} alt="eyebrows" className="expr-preview__layer" />}
-              {selectedExpr.eyesImage && <img src={selectedExpr.eyesImage} alt="eyes" className="expr-preview__layer" />}
-              {selectedExpr.mouthImage && <img src={selectedExpr.mouthImage} alt="mouth" className="expr-preview__layer" />}
-              {selectedExpr.overlayImage && <img src={selectedExpr.overlayImage} alt="overlay" className="expr-preview__layer" />}
-              {!selectedChar?.parts.head && !selectedExpr.eyesImage && !selectedExpr.mouthImage && (
-                <span className="expr-preview__empty">Upload stickers to preview</span>
-              )}
-            </div>
-          </div>
         </div>
-      )}
+
+        {/* Right: Sticker editor */}
+        <div className="expr-detail-panel">
+          {selectedExpr && activeExpr ? (
+            <>
+              <h3 className="expr-detail-title">
+                Expression: <strong>{selectedExpr}</strong>
+              </h3>
+              <p className="expr-detail-hint">
+                Upload sticker images for each facial part. These images will be overlaid on the character's face_base.
+              </p>
+
+              <div className="sticker-grid">
+                {STICKER_PARTS.map(({ key, label }) => (
+                  <div key={key} className="sticker-group">
+                    <div className="sticker-group__label">{label}</div>
+                    <StickerSlot
+                      label={label}
+                      src={(activeExpr as any)[key]}
+                      onUpload={(url) => handleStickerUpload(key, url)}
+                      onClear={(activeExpr as any)[key] ? () => handleStickerClear(key) : undefined}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Composite Preview */}
+              <div className="expr-composite-preview">
+                <h4>Composite Preview</h4>
+                <div className="expr-composite-canvas">
+                  {selectedChar?.parts['face_base'] && (
+                    <img src={selectedChar.parts['face_base']} alt="face_base" className="expr-composite-layer" />
+                  )}
+                  {activeExpr.eyebrowImage && (
+                    <img src={activeExpr.eyebrowImage} alt="eyebrows" className="expr-composite-layer" style={{ zIndex: 2 }} />
+                  )}
+                  {activeExpr.eyesImage && (
+                    <img src={activeExpr.eyesImage} alt="eyes" className="expr-composite-layer" style={{ zIndex: 3 }} />
+                  )}
+                  {activeExpr.mouthImage && (
+                    <img src={activeExpr.mouthImage} alt="mouth" className="expr-composite-layer" style={{ zIndex: 4 }} />
+                  )}
+                  {activeExpr.overlayImage && (
+                    <img src={activeExpr.overlayImage} alt="overlay" className="expr-composite-layer" style={{ zIndex: 5 }} />
+                  )}
+                  {!selectedChar?.parts['face_base'] && !activeExpr.eyesImage && (
+                    <div className="expr-composite-empty">Upload stickers above to preview</div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="expr-detail-empty">
+              Select an expression from the list to edit its sticker images.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
-}
+};
+
+export default ExpressionManager;

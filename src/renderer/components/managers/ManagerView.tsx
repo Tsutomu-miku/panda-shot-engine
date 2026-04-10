@@ -1,75 +1,89 @@
-/**
- * ManagerView — Full-screen overlay with tabbed management panels
- */
+// ============================================================
+// panda-shot-engine — Manager View (Full-screen Overlay)
+// Tabs: Characters / Expressions / Actions / Scenes / Appearances
+// ============================================================
 
-import React, { useState, useCallback, useEffect } from 'react';
-import CharacterManager from './CharacterManager';
-import SceneManager from './SceneManager';
-import ActionManager from './ActionManager';
-import ExpressionManager from './ExpressionManager';
+import React, { useCallback, useEffect } from 'react';
+import { useEditor } from '../../hooks/useEditorState';
+import CharacterManager from '../managers/CharacterManager';
+import ExpressionManager from '../managers/ExpressionManager';
+import ActionManager from '../managers/ActionManager';
+import SceneManager from '../managers/SceneManager';
+import AppearanceManager from '../managers/AppearanceManager';
 import './ManagerView.css';
 
-type ManagerTab = 'characters' | 'scenes' | 'actions' | 'expressions';
+const TABS = [
+  { key: 'characters', label: '👤 Characters' },
+  { key: 'expressions', label: '😀 Expressions' },
+  { key: 'actions', label: '🏃 Actions' },
+  { key: 'scenes', label: '🎬 Scenes' },
+  { key: 'appearances', label: '👔 Appearances' },
+] as const;
 
-interface ManagerViewProps {
-  open: boolean;
-  onClose: () => void;
-  initialTab?: ManagerTab;
-}
+const ManagerView: React.FC = () => {
+  const { state, dispatch } = useEditor();
 
-export default function ManagerView({ open, onClose, initialTab = 'characters' }: ManagerViewProps) {
-  const [activeTab, setActiveTab] = useState<ManagerTab>(initialTab);
+  const handleClose = useCallback(() => {
+    dispatch({ type: 'HIDE_MANAGER' });
+  }, [dispatch]);
 
+  const handleTabChange = useCallback((tab: string) => {
+    dispatch({ type: 'SET_MANAGER_TAB', tab });
+  }, [dispatch]);
+
+  // Ctrl+M to toggle, Escape to close
   useEffect(() => {
-    if (open) setActiveTab(initialTab);
-  }, [open, initialTab]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyM') {
+        e.preventDefault();
+        if (state.showManager) {
+          dispatch({ type: 'HIDE_MANAGER' });
+        } else {
+          dispatch({ type: 'SHOW_MANAGER' });
+        }
+      }
+      if (e.code === 'Escape' && state.showManager) {
+        e.preventDefault();
+        dispatch({ type: 'HIDE_MANAGER' });
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  }, [state.showManager, dispatch]);
 
-  if (!open) return null;
+  if (!state.showManager) return null;
 
-  const tabs: { key: ManagerTab; label: string; icon: string }[] = [
-    { key: 'characters', label: 'Characters', icon: '👤' },
-    { key: 'expressions', label: 'Expressions', icon: '😊' },
-    { key: 'scenes', label: 'Scenes', icon: '🎬' },
-    { key: 'actions', label: 'Actions', icon: '⚡' },
-  ];
+  const activeTab = state.managerTab;
 
   return (
-    <div className="manager-overlay" onClick={onClose}>
-      <div className="manager-container" onClick={(e) => e.stopPropagation()}>
-        <div className="manager-sidebar">
-          <div className="manager-sidebar__title">Asset Manager</div>
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              className={`manager-sidebar__tab ${activeTab === tab.key ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              <span className="manager-sidebar__icon">{tab.icon}</span>
-              <span>{tab.label}</span>
-            </button>
-          ))}
-          <div className="manager-sidebar__spacer" />
-          <button className="manager-sidebar__close" onClick={onClose}>
-            ✕ Close (Esc)
-          </button>
+    <div className="manager-overlay">
+      <div className="manager-container">
+        {/* Header */}
+        <div className="manager-header">
+          <div className="manager-header__title">Asset Manager</div>
+          <div className="manager-header__tabs">
+            {TABS.map((tab) => (
+              <button key={tab.key}
+                className={`manager-tab ${activeTab === tab.key ? 'active' : ''}`}
+                onClick={() => handleTabChange(tab.key)}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <button className="manager-header__close" onClick={handleClose} title="Close (Esc)">✕</button>
         </div>
-        <div className="manager-content">
+
+        {/* Body */}
+        <div className="manager-body">
           {activeTab === 'characters' && <CharacterManager />}
           {activeTab === 'expressions' && <ExpressionManager />}
-          {activeTab === 'scenes' && <SceneManager />}
           {activeTab === 'actions' && <ActionManager />}
+          {activeTab === 'scenes' && <SceneManager />}
+          {activeTab === 'appearances' && <AppearanceManager />}
         </div>
       </div>
     </div>
   );
-}
+};
+
+export default ManagerView;

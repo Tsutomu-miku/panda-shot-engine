@@ -1,36 +1,72 @@
 /**
- * panda-shot-engine — Skeleton System Types
- *
- * Type definitions for the hierarchical bone system, skeleton definitions,
- * per-frame bone state, action keyframes, and action definitions.
+ * panda-shot-engine — Skeleton & Action Type Definitions
  */
 
+import type { ActionCategory } from '../project/types';
+
 // ---------------------------------------------------------------------------
-// Bone Definition (static / structural)
+// Bone State — transform of a single bone at a keyframe
+// All fields optional to allow shorthand in action definitions
 // ---------------------------------------------------------------------------
 
-export interface BoneDefinition {
-  /** Unique identifier within the skeleton, e.g. "spine", "arm_l". */
-  id: string;
-  /** Parent bone id. `null` for the root bone. */
-  parent: string | null;
-  /** Local offset from the parent's tail / pivot. */
-  offsetX: number;
-  offsetY: number;
-  /** Visual length of the bone (pixels in design space). */
-  length: number;
-  /** Rotation pivot relative to the bone's local origin. */
-  pivotX: number;
-  pivotY: number;
-  /** Default resting rotation in radians. */
-  rotation: number;
-  /** Optional image path for the body-part sprite bound to this bone. */
-  partImage?: string;
+export interface BoneState {
+  rotation?: number;     // radians
+  scaleX?: number;
+  scaleY?: number;
+  translateX?: number;
+  translateY?: number;
 }
 
 // ---------------------------------------------------------------------------
-// Skeleton Definition
+// Keyframe — a snapshot of all bone states at a given time
 // ---------------------------------------------------------------------------
+
+export interface ActionKeyframe {
+  /** Time in seconds from action start */
+  time: number;
+  /** Bone name → BoneState */
+  boneStates: Record<string, BoneState>;
+  /** Easing function name (e.g. "ease-in-out") */
+  easing?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Action Definition
+// ---------------------------------------------------------------------------
+
+export interface ActionDefinition {
+  /** Unique action ID (e.g. "walk_right") */
+  id: string;
+  /** Human-readable name */
+  name: string;
+  /** Category for UI grouping */
+  category?: ActionCategory;
+  /** Searchable tags */
+  tags?: string[];
+  /** Description of the action */
+  description?: string;
+  /** Total duration in seconds */
+  duration: number;
+  /** Whether the action loops */
+  loop: boolean;
+  /** Keyframes */
+  keyframes: ActionKeyframe[];
+  /** Target skeleton this action was designed for */
+  targetSkeleton?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton Definition — bone hierarchy
+// ---------------------------------------------------------------------------
+
+export interface BoneDefinition {
+  id: string;
+  name: string;
+  parentId: string | null;
+  defaultState: BoneState;
+  length: number;
+  zOrder: number;
+}
 
 export interface SkeletonDefinition {
   id: string;
@@ -39,63 +75,15 @@ export interface SkeletonDefinition {
 }
 
 // ---------------------------------------------------------------------------
-// Runtime Bone State (per-frame)
+// Built-in bone names
 // ---------------------------------------------------------------------------
 
-export interface BoneState {
-  boneId: string;
-  /** Additional rotation on top of the default (radians). */
-  rotation: number;
-  /** Translation offset added to the bone's local position. */
-  translateX: number;
-  translateY: number;
-  /** Scale factors applied in local space. */
-  scaleX: number;
-  scaleY: number;
-}
+export const HUMANOID_BONES = [
+  'root', 'torso', 'head',
+  'upper_arm_l', 'lower_arm_l', 'hand_l',
+  'upper_arm_r', 'lower_arm_r', 'hand_r',
+  'upper_leg_l', 'lower_leg_l', 'foot_l',
+  'upper_leg_r', 'lower_leg_r', 'foot_r',
+] as const;
 
-export function defaultBoneState(boneId: string): BoneState {
-  return {
-    boneId,
-    rotation: 0,
-    translateX: 0,
-    translateY: 0,
-    scaleX: 1,
-    scaleY: 1,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Action Keyframe
-// ---------------------------------------------------------------------------
-
-/**
- * A single keyframe within an action clip.
- *
- * `time` is normalised to [0, 1] where 0 = action start, 1 = action end.
- * `boneStates` is a sparse map — only the bones that differ from default
- * need to be specified.
- */
-export interface ActionKeyframe {
-  time: number;
-  boneStates: Partial<Record<string, Partial<BoneState>>>;
-}
-
-// ---------------------------------------------------------------------------
-// Action Definition
-// ---------------------------------------------------------------------------
-
-export interface ActionDefinition {
-  /** Unique identifier, e.g. "walk", "punch". */
-  id: string;
-  /** Human-readable name. */
-  name: string;
-  /** Duration of one cycle in seconds. */
-  duration: number;
-  /** Whether the action loops. */
-  loop: boolean;
-  /** Ordered keyframes (must be sorted by `time` ascending). */
-  keyframes: ActionKeyframe[];
-  /** Name of the easing function applied between keyframes. */
-  easing: string;
-}
+export type HumanoidBoneName = (typeof HUMANOID_BONES)[number];

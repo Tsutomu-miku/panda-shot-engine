@@ -1,0 +1,488 @@
+/* ============================================================
+   panda-shot-engine — Appearance Manager Styles
+   ============================================================ */
+
+.appearance-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 12px;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.appearance-manager--empty {
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+}
+
+/* ─── Character Selector ──────────────────────────────── */
+
+.appearance-char-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.appearance-char-selector__label {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.appearance-char-selector__list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.appearance-char-chip {
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 2px solid var(--chip-color, #666);
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.appearance-char-chip:hover {
+  background: color-mix(in srgb, var(--chip-color) 20%, transparent);
+}
+
+.appearance-char-chip.active {
+  background: var(--chip-color);
+  color: #fff;
+}
+
+/* ─── Content Split ───────────────────────────────────── */
+
+.appearance-content {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.appearance-items-panel {
+  flex: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.appearance-presets-panel {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  overflow: hidden;
+}
+
+/* ─── Headers ─────────────────────────────────────────── */
+
+.appearance-items-header,
+.appearance-presets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.appearance-items-header h3,
+.appearance-presets-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+/* ─── Category Filters ────────────────────────────────── */
+
+.appearance-filters {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.filter-chip {
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.filter-chip:hover {
+  border-color: #7c3aed;
+  color: #e2e8f0;
+}
+
+.filter-chip.active {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+
+/* ─── Search ──────────────────────────────────────────── */
+
+.appearance-search {
+  flex-shrink: 0;
+}
+
+/* ─── Items Grid ──────────────────────────────────────── */
+
+.appearance-items-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.appearance-empty {
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* ─── Item Card ───────────────────────────────────────── */
+
+.appearance-item-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.appearance-item-card:hover {
+  border-color: #475569;
+}
+
+.appearance-item-card.equipped {
+  border-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.appearance-item-card__preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  background: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.appearance-item-card__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.appearance-item-card__icon {
+  font-size: 24px;
+}
+
+.appearance-item-card__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.appearance-item-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appearance-item-card__cat {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.appearance-item-card__z {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.appearance-item-card__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ─── Preset Card ─────────────────────────────────────── */
+
+.appearance-presets-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preset-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.preset-card:hover {
+  border-color: #475569;
+}
+
+.preset-card.active {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.preset-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  flex: 1;
+}
+
+.preset-card__count {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.preset-card__badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: #10b981;
+  color: #fff;
+  border-radius: 8px;
+}
+
+.preset-card__delete {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.preset-card:hover .preset-card__delete {
+  opacity: 1;
+}
+
+/* ─── Add Preset ──────────────────────────────────────── */
+
+.appearance-add-preset {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.appearance-add-preset .input-text {
+  flex: 1;
+}
+
+/* ─── Layer Preview ───────────────────────────────────── */
+
+.appearance-preview {
+  flex-shrink: 0;
+  margin-top: 8px;
+}
+
+.appearance-preview h4 {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0 0 6px 0;
+}
+
+.appearance-preview__canvas {
+  width: 100%;
+  height: 180px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.appearance-preview__layer {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.appearance-preview__layer img {
+  max-width: 80%;
+  max-height: 80%;
+  object-fit: contain;
+}
+
+.appearance-preview__placeholder {
+  font-size: 40px;
+}
+
+.appearance-preview__layer-label {
+  font-size: 9px;
+  color: #94a3b8;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 1px 5px;
+  border-radius: 3px;
+  position: absolute;
+  bottom: 2px;
+}
+
+.appearance-preview__empty {
+  color: #475569;
+  font-size: 12px;
+}
+
+/* ─── Upload Slot ─────────────────────────────────────── */
+
+.appearance-upload-slot {
+  border: 2px dashed #334155;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.appearance-upload-slot:hover {
+  border-color: #7c3aed;
+}
+
+.appearance-upload-slot__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.appearance-upload-slot__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.appearance-upload-slot__plus {
+  font-size: 20px;
+  color: #64748b;
+}
+
+.appearance-upload-slot__label {
+  font-size: 10px;
+  color: #64748b;
+}
+
+/* ─── Item Form Modal ─────────────────────────────────── */
+
+.appearance-form-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.appearance-form {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 20px;
+  width: 400px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.appearance-form__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 16px;
+}
+
+.appearance-form__row {
+  margin-bottom: 12px;
+}
+
+.appearance-form__row label {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.appearance-form__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ─── Button Variants ─────────────────────────────────── */
+
+.btn--xs {
+  padding: 2px 6px;
+  font-size: 11px;
+  min-width: 0;
+  border-radius: 4px;
+}
+
+.btn--sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.btn--success {
+  background: #10b981;
+  border-color: #10b981;
+  color: #fff;
+}
+
+.btn--danger {
+  background: transparent;
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.btn--danger:hover {
+  background: #ef4444;
+  color: #fff;
+}

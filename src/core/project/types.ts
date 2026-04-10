@@ -1,102 +1,263 @@
 /**
- * Core Project Types — Image-based character & expression system
- * 
- * Key concepts:
- * - Characters are composed of uploadable image parts (head, body, arms, etc.)
- * - Expressions work by replacing facial sticker images on the character
- * - This is the SINGLE source of truth for character/expression types
+ * panda-shot-engine — Project Type Definitions
+ *
+ * Complete type system for project management including project settings,
+ * asset manifests, character assets, scenes, props, audio, and export options.
  */
 
-// ─── Expression System ──────────────────────────────────────
-/** An expression set defines the facial sticker images to overlay on a character */
+// ---------------------------------------------------------------------------
+// Action Categories
+// ---------------------------------------------------------------------------
+
+export type ActionCategory = 'movement' | 'combat' | 'emotion' | 'gesture' | 'idle' | 'custom';
+
+export const ACTION_CATEGORIES: ActionCategory[] = [
+  'movement', 'combat', 'emotion', 'gesture', 'idle', 'custom',
+];
+
+// ---------------------------------------------------------------------------
+// Appearance System
+// ---------------------------------------------------------------------------
+
+export type AppearanceCategoryType = 'hair' | 'outfit' | 'accessory' | 'hat' | 'shoes' | 'weapon' | 'custom';
+
+export const APPEARANCE_CATEGORIES: AppearanceCategoryType[] = [
+  'hair', 'outfit', 'accessory', 'hat', 'shoes', 'weapon', 'custom',
+];
+
+export interface AppearanceItem {
+  /** Unique identifier */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Category */
+  category: AppearanceCategoryType;
+  /** Image path or data URI */
+  image: string;
+  /** Layer order (higher = on top) */
+  zIndex: number;
+  /** Optional tint color */
+  tint?: string;
+  /** Optional thumbnail */
+  thumbnail?: string;
+}
+
+export interface AppearancePreset {
+  /** Unique identifier */
+  id: string;
+  /** Preset display name */
+  name: string;
+  /** IDs of AppearanceItems in this preset */
+  itemIds: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Expression set for a character
+// ---------------------------------------------------------------------------
+
 export interface ExpressionSet {
-  id: string;
+  /** Expression name, e.g. "happy", "angry" */
   name: string;
-  /** Eyes sticker image (data URL or asset path) */
+  /** Eye part image path / data URI */
   eyesImage?: string;
-  /** Mouth sticker image */
+  /** Mouth part image path / data URI */
   mouthImage?: string;
-  /** Eyebrow sticker image */
+  /** Optional eyebrow image path / data URI */
   eyebrowImage?: string;
-  /** Full-face overlay (e.g. blush, sweat drops, anger marks) */
+  /** Optional blush/overlay image path / data URI */
   overlayImage?: string;
-  /** Optional thumbnail preview of the combined expression */
+  /** Optional thumbnail */
   thumbnail?: string;
 }
 
-// ─── Character System ───────────────────────────────────────
-/** A character asset with image-based body parts and expression sticker sets */
+// ---------------------------------------------------------------------------
+// Character Asset
+// ---------------------------------------------------------------------------
+
 export interface CharacterAsset {
+  /** Unique identifier */
   id: string;
+  /** Display name */
   name: string;
-  /** Visual style category */
-  style: 'humanoid' | 'beast' | 'chibi' | 'custom';
-  /** 
-   * Image parts that compose the character body.
-   * Keys are part names (e.g. "head", "body", "left_arm", "right_arm", "legs")
-   * Values are data URLs or asset paths to the image files.
-   */
+  /** Visual style identifier (e.g. "panda-default", "custom") */
+  style: string;
+  /** Part name → file path mapping (e.g. "head" → "./assets/chars/panda/head.png") */
   parts: Record<string, string>;
-  /**
-   * Named expression sets. Each expression replaces facial stickers on the character.
-   * Key is the expression ID (e.g. "happy", "angry", "surprised")
-   */
+  /** Expression name → expression set (e.g. "happy" → {eyesImage, mouthImage}) */
   expressions: Record<string, ExpressionSet>;
-  /** Which skeleton template to use for rigging */
+  /** Skeleton type id (e.g. "panda_default") */
   skeletonType: string;
-  /** Character thumbnail preview (data URL or asset path) */
+  /** Appearance items owned by this character */
+  appearanceItems: AppearanceItem[];
+  /** Named appearance presets */
+  appearancePresets: AppearancePreset[];
+  /** Currently active preset */
+  activePresetId?: string;
+  /** Optional thumbnail path */
   thumbnail?: string;
-  /** Text description for AI/DSL reference */
+  /** Optional color for UI display */
+  color?: string;
+  /** Optional description */
   description?: string;
+  /** Optional metadata */
+  metadata?: Record<string, unknown>;
 }
 
-// ─── Scene System ───────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Scene Asset (background)
+// ---------------------------------------------------------------------------
+
 export interface SceneAsset {
+  /** Unique identifier */
   id: string;
+  /** Display name */
   name: string;
-  /** Background image (data URL or asset path), if provided overrides gradient */
-  backgroundImage?: string;
-  /** Fallback background color */
-  color: string;
-  gradientStart: string;
-  gradientEnd: string;
-  description: string;
-  /** Vertical position of the floor line (0-1, 0=top, 1=bottom) */
-  floorY: number;
+  /** File path to the scene background image or data URI */
+  filePath: string;
+  /** Optional thumbnail */
+  thumbnail?: string;
+  /** Optional background color fallback */
+  backgroundColor?: string;
+  /** Optional description */
+  description?: string;
+  /** Scene dimensions hint */
+  width?: number;
+  height?: number;
 }
 
-// ─── DSL Shot ───────────────────────────────────────────────
-export interface DslShot {
+// ---------------------------------------------------------------------------
+// Prop Asset (items, weapons, etc.)
+// ---------------------------------------------------------------------------
+
+export interface PropAsset {
   id: string;
-  label: string;
-  dsl: string;
-  /** Duration in seconds for this shot */
+  name: string;
+  filePath: string;
+  attachBone?: string;
+  offsetX?: number;
+  offsetY?: number;
+  rotation?: number;
+  scale?: number;
+  thumbnail?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Audio Asset
+// ---------------------------------------------------------------------------
+
+export interface AudioAsset {
+  id: string;
+  name: string;
+  filePath: string;
   duration?: number;
+  audioType: 'bgm' | 'sfx';
+  defaultVolume?: number;
 }
 
-// ─── Project Root ───────────────────────────────────────────
-export interface PandaProject {
-  name: string;
-  shots: DslShot[];
+// ---------------------------------------------------------------------------
+// Asset Manifest
+// ---------------------------------------------------------------------------
+
+export interface AssetManifest {
   characters: CharacterAsset[];
   scenes: SceneAsset[];
-  customActions: import('../skeleton/types').ActionDefinition[];
+  props: PropAsset[];
+  audio: AudioAsset[];
 }
 
-// ─── Standard character parts definition ────────────────────
-export const STANDARD_PARTS = [
-  { key: 'head', label: 'Head', description: 'Character head/face base image' },
-  { key: 'body', label: 'Body', description: 'Torso/body image' },
-  { key: 'left_arm', label: 'Left Arm', description: 'Left arm image' },
-  { key: 'right_arm', label: 'Right Arm', description: 'Right arm image' },
-  { key: 'left_leg', label: 'Left Leg', description: 'Left leg image' },
-  { key: 'right_leg', label: 'Right Leg', description: 'Right leg image' },
-] as const;
+// ---------------------------------------------------------------------------
+// Project Settings
+// ---------------------------------------------------------------------------
 
-/** Standard expression sticker slots */
-export const EXPRESSION_SLOTS = [
-  { key: 'eyesImage', label: 'Eyes', description: 'Eye sticker overlay' },
-  { key: 'mouthImage', label: 'Mouth', description: 'Mouth sticker overlay' },
-  { key: 'eyebrowImage', label: 'Eyebrows', description: 'Eyebrow sticker overlay' },
-  { key: 'overlayImage', label: 'Overlay', description: 'Full-face overlay (blush, sweat, etc.)' },
-] as const;
+export interface ProjectSettings {
+  resolution: { width: number; height: number };
+  fps: number;
+  backgroundColor: string;
+  defaultTransition: string;
+  defaultTransitionDuration: number;
+  autoSave: boolean;
+  autoSaveInterval: number;
+}
+
+// ---------------------------------------------------------------------------
+// Shot reference
+// ---------------------------------------------------------------------------
+
+export interface ProjectShot {
+  id: string;
+  duration: number;
+  dslSource: string;
+  notes?: string;
+  order: number;
+  thumbnail?: string;
+}
+
+// ---------------------------------------------------------------------------
+// PandaProject
+// ---------------------------------------------------------------------------
+
+export interface PandaProject {
+  version: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  settings: ProjectSettings;
+  assets: AssetManifest;
+  shots: ProjectShot[];
+  metadata?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Defaults factory
+// ---------------------------------------------------------------------------
+
+export function createDefaultSettings(): ProjectSettings {
+  return {
+    resolution: { width: 960, height: 540 },
+    fps: 24,
+    backgroundColor: '#1e1e2e',
+    defaultTransition: 'cut',
+    defaultTransitionDuration: 0.5,
+    autoSave: true,
+    autoSaveInterval: 60,
+  };
+}
+
+export function createEmptyAssetManifest(): AssetManifest {
+  return { characters: [], scenes: [], props: [], audio: [] };
+}
+
+export function createNewProject(name: string): PandaProject {
+  const now = new Date().toISOString();
+  return {
+    version: '1.0.0',
+    name,
+    createdAt: now,
+    updatedAt: now,
+    settings: createDefaultSettings(),
+    assets: createEmptyAssetManifest(),
+    shots: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Export options
+// ---------------------------------------------------------------------------
+
+export interface ExportOptions {
+  format: 'png-sequence' | 'mp4' | 'webm' | 'gif';
+  fps: number;
+  width: number;
+  height: number;
+  quality?: number;
+  outputPath: string;
+  shotIds?: string[];
+  includeAudio?: boolean;
+}
+
+export interface RecentProjectEntry {
+  name: string;
+  filePath: string;
+  lastOpened: string;
+  thumbnail?: string;
+}

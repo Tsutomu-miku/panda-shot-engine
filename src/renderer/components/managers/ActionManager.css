@@ -1,93 +1,305 @@
+/* ============================================================
+   panda-shot-engine — Action Manager Styles
+   ============================================================ */
+
 .action-manager {
   display: flex;
-  flex-direction: column;
   height: 100%;
-  background: #1e1e2e;
-  color: #cdd6f4;
+  overflow: hidden;
 }
 
-.action-badge {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-size: 10px;
-  margin-left: 6px;
+.action-manager__list {
+  width: 320px;
+  flex-shrink: 0;
+  border-right: 1px solid #1e293b;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 8px;
 }
 
-.action-badge--builtin {
-  background: #31324480;
-  color: #6c7086;
+.action-manager__detail {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
 }
 
-.action-badge--custom {
-  background: #7c3aed30;
-  color: #b4befe;
-}
+/* ─── List Header ─────────────────────────────────────── */
 
-.action-badge--loop {
-  background: #a6e3a130;
-  color: #a6e3a1;
-}
-
-.keyframe-list {
-  margin-top: 8px;
-}
-
-.keyframe-item {
+.action-list-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: #252538;
-  border-radius: 6px;
-  margin-bottom: 4px;
-  font-size: 12px;
+  justify-content: space-between;
 }
 
-.keyframe-item__time {
+.action-list-header h3 {
+  font-size: 13px;
   font-weight: 600;
-  color: #b4befe;
-  min-width: 40px;
+  color: #e2e8f0;
+  margin: 0;
 }
 
-.keyframe-item__bones {
-  flex: 1;
-  color: #6c7086;
-}
+/* ─── Filters ─────────────────────────────────────────── */
 
-.keyframe-item__remove {
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: #6c7086;
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.keyframe-item__remove:hover {
-  background: #f38ba830;
-  color: #f38ba8;
-}
-
-.easing-select {
+.action-filters {
   display: flex;
+  gap: 4px;
   flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.action-search {
+  flex-shrink: 0;
+}
+
+/* ─── List Items ──────────────────────────────────────── */
+
+.action-list-items {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
 }
 
-.easing-option {
-  padding: 3px 10px;
-  border-radius: 10px;
-  font-size: 11px;
-  background: #313244;
-  color: #6c7086;
-  cursor: pointer;
-  border: none;
+.action-empty {
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+  padding: 20px 0;
 }
 
-.easing-option.active {
-  background: #7c3aed40;
-  color: #b4befe;
+/* ─── Action Card ─────────────────────────────────────── */
+
+.action-card {
+  display: flex;
+  border-radius: 8px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.action-card:hover { border-color: #475569; }
+.action-card.selected { border-color: #7c3aed; background: rgba(124, 58, 237, 0.06); }
+
+.action-card__color-bar {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+.action-card__body {
+  padding: 8px 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.action-card__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.action-card__badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.action-card__meta {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.action-card__tags {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* ─── Action Tags ─────────────────────────────────────── */
+
+.action-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #334155;
+  color: #94a3b8;
+  font-size: 9px;
+}
+
+.action-tag--lg {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+/* ─── Detail Panel ────────────────────────────────────── */
+
+.action-detail-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.action-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.action-detail-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.action-detail-badge {
+  padding: 3px 10px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.action-detail-desc {
+  font-size: 13px;
+  color: #94a3b8;
+  margin: 0 0 12px 0;
+}
+
+/* ─── Detail Props ────────────────────────────────────── */
+
+.action-detail-props {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.action-prop {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 12px;
+  background: #1e293b;
+  border-radius: 6px;
+  border: 1px solid #334155;
+}
+
+.action-prop__label { font-size: 10px; color: #64748b; }
+.action-prop__value { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+
+.action-detail-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+/* ─── Detail Sections ─────────────────────────────────── */
+
+.action-detail-section {
+  margin-bottom: 16px;
+}
+
+.action-detail-section h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px 0;
+}
+
+/* ─── Keyframe Timeline ───────────────────────────────── */
+
+.kf-timeline {
+  background: #0f172a;
+  border-radius: 6px;
+  padding: 4px;
+  overflow-x: auto;
+}
+
+/* ─── Keyframe List ───────────────────────────────────── */
+
+.kf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kf-item {
+  border: 1px solid #334155;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.kf-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.kf-item-header:hover { background: #1e293b; }
+
+.kf-item-time { font-size: 12px; font-weight: 600; color: #7c3aed; }
+.kf-item-bones { font-size: 11px; color: #94a3b8; }
+.kf-item-easing { font-size: 10px; color: #64748b; background: #334155; padding: 1px 5px; border-radius: 3px; }
+.kf-item-expand { font-size: 10px; color: #64748b; margin-left: auto; }
+
+/* ─── Bone Inspector ──────────────────────────────────── */
+
+.bone-inspector {
+  padding: 8px;
+  background: #0f172a;
+  border-top: 1px solid #334155;
+}
+
+.bone-empty {
+  color: #64748b;
+  font-size: 11px;
+  padding: 8px;
+}
+
+.bone-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.bone-table th {
+  text-align: left;
+  color: #64748b;
+  padding: 2px 6px;
+  font-weight: 600;
+  border-bottom: 1px solid #334155;
+}
+
+.bone-table td {
+  padding: 2px 6px;
+  color: #94a3b8;
+}
+
+.bone-table td.bone-name {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.bone-table tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
 }
